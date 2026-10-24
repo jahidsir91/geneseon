@@ -1,0 +1,142 @@
+/* ==========================================================================
+   GENESEON ACADEMY - MOBILE-FIRST RESPONSIVE & BOTTOM NAVIGATION STYLES
+   ========================================================================== */
+
+/* Tablet & Mobile Media Queries */
+@media (max-width: 1024px) {
+  .hero-stats-row {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+  }
+
+  .courses-grid, .exams-grid, .benefits-grid, .reviews-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .store-products-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .admin-stats-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .learn-layout {
+    grid-template-columns: 300px 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  :root {
+    --header-height: 52px;
+  }
+
+  .nav-links {
+    display: none;
+  }
+
+  .hero-title {
+    font-size: 2rem;
+  }
+
+  .category-cards-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .courses-grid, .exams-grid, .benefits-grid, .reviews-grid, .store-products-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-stats-row {
+    grid-template-columns: repeat(2, 1fr);
+    padding: 1rem;
+  }
+
+  .quick-actions-bar {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stats-cards-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+  }
+
+  .stat-box {
+    padding: 0.75rem 0.5rem;
+  }
+  .stat-box .val {
+    font-size: 1.25rem;
+  }
+
+  .cart-layout, .checkout-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .footer-grid {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
+  .footer-bottom {
+    flex-direction: column;
+    gap: 0.75rem;
+    text-align: center;
+  }
+
+  /* Learn Mode on Mobile */
+  .learn-layout {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+  }
+  .learn-sidebar {
+    height: 320px;
+    border-right: none;
+    border-top: 1px solid var(--border-color);
+    order: 2;
+  }
+  .learn-main {
+    height: auto;
+    order: 1;
+  }
+
+  /* Exam Runner on Mobile */
+  .exam-main-container {
+    grid-template-columns: 1fr;
+    padding: 0.75rem;
+  }
+  .palette-card {
+    order: 2;
+  }
+  .question-card-runner {
+    order: 1;
+    padding: 1.25rem;
+  }
+  .result-stats-row {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .qb-options-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Admin on Mobile */
+  .admin-sidebar {
+    position: fixed;
+    left: -100%;
+    top: 0;
+    bottom: 0;
+    z-index: 1000;
+  }
+  .admin-sidebar.open {
+    left: 0;
+  }
+  .admin-stats-grid {
+    grid-template-columns: 1fr;
+  }
+}

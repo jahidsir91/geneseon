@@ -1,0 +1,14 @@
+/gemini_local.py
+/__pycache__/
+*.py[cod]
+/.venv/
+/node_modules/
+/.next/
+/out/
+/.env*
+!/.env.example
+/public/index.html
+/public/css/
+/public/js/
+/public/assets/
+/public/images/

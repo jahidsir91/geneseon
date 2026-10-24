@@ -1,0 +1,472 @@
+/* ==========================================================================
+   GENESEON ACADEMY - ADMIN DASHBOARD & MANAGEMENT STYLES
+   ========================================================================== */
+
+.admin-layout {
+  display: flex;
+  min-height: 100vh;
+  background: var(--bg-main);
+}
+
+/* Admin Sidebar */
+.admin-sidebar {
+  width: var(--sidebar-width);
+  background: #0F172A;
+  color: #94A3B8;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  border-right: 1px solid #1E293B;
+  transition: all var(--transition-base);
+}
+
+.admin-brand {
+  padding: 1.5rem;
+  border-bottom: 1px solid #1E293B;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: #FFFFFF;
+  font-family: var(--font-heading);
+  font-size: 1.25rem;
+  font-weight: 800;
+}
+.admin-brand .admin-badge {
+  font-size: 0.7rem;
+  background: #EF4444;
+  color: white;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius-sm);
+}
+
+.admin-nav-list {
+  list-style: none;
+  padding: 1rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.admin-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 1rem;
+  border-radius: var(--radius-md);
+  color: #94A3B8;
+  font-weight: 500;
+  font-size: 0.9rem;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all var(--transition-fast);
+}
+.admin-nav-item:hover {
+  background: #1E293B;
+  color: #FFFFFF;
+}
+.admin-nav-item.active {
+  background: var(--primary);
+  color: #FFFFFF;
+  font-weight: 600;
+}
+.admin-nav-item svg {
+  width: 20px;
+  height: 20px;
+}
+
+.admin-nav-section-title {
+  font-size: 0.725rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #64748B;
+  padding: 0.75rem 1rem 0.25rem;
+  font-weight: 700;
+}
+
+/* Admin Main Content */
+.admin-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.admin-top-bar {
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-color);
+  padding: 1rem 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.admin-content-body {
+  padding: 2rem;
+  flex: 1;
+}
+
+/* Admin Stat Cards Grid */
+.admin-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 1.25rem;
+  margin-bottom: 2rem;
+}
+
+.admin-stat-box {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  padding: 1.25rem;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.admin-stat-icon-wrap {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.35rem;
+}
+.admin-stat-box .val {
+  font-size: 1.5rem;
+  font-weight: 800;
+  font-family: var(--font-heading);
+  color: var(--text-main);
+}
+.admin-stat-box .lbl {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+/* Admin Data Tables */
+.admin-table-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.exam-question-picker {
+  max-height: 360px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 0.75rem;
+}
+.exam-question-picker details {
+  min-width: 0;
+}
+.exam-question-picker summary {
+  cursor: pointer;
+  font-weight: 600;
+  list-style-position: inside;
+  padding: 0.55rem;
+  border-radius: var(--radius-sm);
+}
+.exam-question-picker summary:hover {
+  background: var(--bg-card-subtle);
+}
+.exam-question-category-group + .exam-question-category-group {
+  border-top: 1px solid var(--border-color);
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+}
+.exam-question-category-group > summary {
+  color: var(--primary);
+  font-size: 1rem;
+}
+.exam-question-subject-group {
+  margin-left: 1rem;
+}
+.exam-question-subject-group > summary {
+  color: var(--text-main);
+}
+.exam-question-chapter-group {
+  min-width: 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  margin: 0.4rem 0 0.4rem 1rem;
+  padding: 0.25rem 0.5rem 0.5rem;
+}
+.exam-question-chapter-group > summary {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+.exam-question-type-group {
+  margin: 0.35rem 0 0.35rem 0.75rem;
+  padding-left: 0.55rem;
+  border-left: 2px solid var(--border-color);
+}
+.exam-question-type-group > summary {
+  color: var(--primary);
+  font-size: 0.82rem;
+}
+.exam-question-count {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 400;
+  margin-left: 0.35rem;
+}
+.exam-question-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  margin-left: 1rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+.exam-question-choice input {
+  flex: 0 0 auto;
+  margin-top: 0.3rem;
+}
+.cq-submission-card {
+  padding: 1.25rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  margin: 1rem 0;
+  background: var(--bg-card);
+}
+.cq-submission-heading,
+.cq-submission-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.9rem;
+}
+.cq-submission-heading p {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin-top: 0.25rem;
+}
+.cq-submission-summary {
+  justify-content: flex-start;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+.cq-grading-form {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(220px, 2fr) auto;
+  align-items: end;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+.cq-grading-form .form-group {
+  margin-bottom: 0;
+}
+.admin-user-category-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0 1.25rem 1rem;
+}
+.admin-user-category-filters .chip-btn {
+  padding: 0.4rem 0.85rem;
+}
+.admin-user-category-filters > span {
+  margin-left: auto;
+  font-size: 0.85rem;
+}
+@media (max-width: 760px) {
+  .cq-grading-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+.admin-question-hierarchy,
+.admin-question-hierarchy details {
+  min-width: 0;
+}
+.admin-question-hierarchy summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  cursor: pointer;
+  list-style-position: inside;
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--radius-sm);
+}
+.admin-question-hierarchy summary:hover {
+  background: var(--bg-card-subtle);
+}
+.admin-question-category {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  margin-bottom: 0.75rem;
+}
+.admin-question-category > summary {
+  color: var(--primary);
+  font-size: 1rem;
+  font-weight: 700;
+}
+.admin-question-subject,
+.admin-question-job-exam {
+  margin: 0 0.75rem 0.65rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+}
+.admin-question-subject > summary,
+.admin-question-job-exam > summary {
+  color: var(--text-main);
+  font-weight: 600;
+}
+.admin-question-job-exam > summary {
+  color: var(--primary);
+}
+.admin-question-chapter {
+  margin: 0 0.65rem 0.65rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+}
+.admin-question-chapter > summary {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.admin-question-type {
+  margin: 0 0.65rem 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+}
+.admin-question-type > summary {
+  color: var(--primary);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+.admin-question-count {
+  color: var(--text-subtle);
+  font-size: 0.8rem;
+  font-weight: 400;
+  white-space: nowrap;
+}
+.admin-question-list {
+  padding: 0 0.65rem 0.65rem;
+}
+.admin-question-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem;
+  border-top: 1px solid var(--border-color);
+}
+.admin-question-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.admin-question-meta {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin-top: 0.35rem;
+}
+.admin-cq-parts {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+}
+.admin-cq-parts li {
+  margin: 0.25rem 0;
+}
+.admin-cq-part {
+  min-width: 0;
+  margin: 0 0 1rem;
+  padding: 0.85rem 1rem 0;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+}
+.admin-cq-part legend {
+  padding: 0 0.4rem;
+  color: var(--primary);
+  font-weight: 700;
+}
+.admin-question-empty {
+  padding: 0 1rem 1rem;
+}
+
+.admin-table-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.9rem;
+}
+
+.data-table th {
+  background: var(--bg-card-subtle);
+  padding: 0.85rem 1rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.data-table td {
+  padding: 0.95rem 1rem;
+  border-bottom: 1px solid var(--divider);
+  color: var(--text-main);
+}
+
+.data-table tr:hover td {
+  background: var(--bg-card-subtle);
+}
+
+/* Course Builder UI */
+.curriculum-builder-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.builder-chapter-block {
+  background: var(--bg-card-subtle);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 1rem;
+}
+
+.builder-chapter-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+}
+
+.builder-lesson-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 0.65rem 1rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.875rem;
+}

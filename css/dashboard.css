@@ -1,0 +1,232 @@
+/* ==========================================================================
+   GENESEON ACADEMY - STUDENT DASHBOARD STYLES
+   ========================================================================== */
+
+.dashboard-header {
+  background: linear-gradient(135deg, var(--primary-light) 0%, var(--bg-surface) 100%);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  padding: 1.75rem 2rem;
+  margin-bottom: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+}
+
+.dashboard-welcome h1 {
+  font-size: 1.75rem;
+  margin-bottom: 0.25rem;
+}
+.dashboard-welcome p {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.dashboard-quick-stats {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.streak-card {
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+  border-radius: var(--radius-lg);
+  padding: 0.6rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+.streak-icon {
+  font-size: 1.5rem;
+  animation: flame 1.5s infinite alternate ease-in-out;
+}
+@keyframes flame {
+  0% { transform: scale(1); }
+  100% { transform: scale(1.15) rotate(4deg); }
+}
+.streak-number {
+  font-weight: 800;
+  font-size: 1.15rem;
+  color: #B45309;
+}
+.streak-label {
+  font-size: 0.75rem;
+  color: #D97706;
+  font-weight: 600;
+}
+
+/* Quick Actions Grid */
+.quick-actions-bar {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.quick-action-btn {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 1rem 0.75rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  color: var(--text-main);
+  text-decoration: none;
+}
+.quick-action-btn:hover {
+  border-color: var(--primary);
+  background: var(--primary-light);
+  transform: translateY(-2px);
+  color: var(--primary);
+}
+.quick-action-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-md);
+  background: var(--bg-card-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  color: var(--primary);
+}
+
+/* Dashboard Grid Layout */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1.75rem;
+}
+
+/* Continue Learning Banner */
+.continue-learning-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  padding: 1.5rem;
+  margin-bottom: 1.75rem;
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.course-thumb-mini {
+  width: 130px;
+  height: 85px;
+  border-radius: var(--radius-md);
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.continue-info {
+  flex: 1;
+}
+.continue-info .tag {
+  font-size: 0.75rem;
+  color: var(--primary);
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-bottom: 0.25rem;
+}
+.continue-info h3 {
+  font-size: 1.15rem;
+  margin-bottom: 0.35rem;
+}
+.continue-info .lesson-name {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+}
+
+/* Performance Stats Grid */
+.stats-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.75rem;
+}
+
+.stat-box {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem 1rem;
+  text-align: center;
+}
+.stat-box .val {
+  font-size: 1.6rem;
+  font-weight: 800;
+  font-family: var(--font-heading);
+  color: var(--text-main);
+  margin-bottom: 0.25rem;
+}
+.stat-box .lbl {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* Today's Tasks Checklist */
+.tasks-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  padding: 1.5rem;
+  margin-bottom: 1.75rem;
+}
+.tasks-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+.tasks-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.task-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0.85rem;
+  background: var(--bg-card-subtle);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.task-item:hover {
+  background: var(--border-color);
+}
+.task-item.completed {
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+.task-checkbox {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.task-text {
+  font-size: 0.9rem;
+  font-weight: 500;
+  flex: 1;
+}
+
+/* Recommended Section */
+.recommended-section h2 {
+  font-size: 1.35rem;
+  margin-bottom: 1rem;
+}

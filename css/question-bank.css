@@ -1,0 +1,226 @@
+/* ==========================================================================
+   GENESEON ACADEMY - QUESTION BANK & PRACTICE GENERATOR STYLES
+   ========================================================================== */
+
+.qb-header-section {
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-color);
+  padding: 2rem 0;
+  margin-bottom: 2rem;
+}
+
+.qb-hierarchy {
+  max-width: 1000px;
+  margin: 0 auto 3rem;
+}
+.qb-hierarchy details {
+  min-width: 0;
+}
+.qb-hierarchy summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  cursor: pointer;
+  list-style-position: inside;
+}
+.qb-category-group {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  margin-bottom: 0.85rem;
+  box-shadow: var(--shadow-sm);
+}
+.qb-category-group > summary {
+  padding: 1rem 1.25rem;
+  color: var(--primary);
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+.qb-subject-group {
+  margin: 0 1rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+.qb-subject-group > summary {
+  padding: 0.8rem 1rem;
+  color: var(--text-main);
+  font-weight: 600;
+}
+.qb-chapter-group {
+  margin: 0 0.75rem 0.65rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+}
+.qb-chapter-group > summary {
+  padding: 0.65rem 0.85rem;
+  color: var(--text-muted);
+  font-size: 0.925rem;
+  font-weight: 600;
+}
+.qb-type-group {
+  margin: 0 0.75rem 0.65rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+}
+.qb-type-group > summary {
+  padding: 0.6rem 0.85rem;
+  color: var(--primary);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+.qb-hierarchy summary:hover {
+  background: var(--bg-card-subtle);
+}
+.qb-hierarchy-count {
+  color: var(--text-subtle);
+  font-size: 0.8rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.qb-chapter-questions {
+  padding: 0 0.75rem 0.75rem;
+}
+.qb-empty-type {
+  margin: 0;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.85rem;
+}
+.cq-stimulus {
+  margin: 0 0 1rem;
+  padding: 1rem;
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card-subtle);
+  font-size: 1rem;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+.cq-stimulus > span {
+  color: var(--primary);
+}
+.cq-parts {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+  padding-left: 1.5rem;
+}
+.cq-parts li {
+  padding-left: 0.25rem;
+  line-height: 1.7;
+}
+.cq-answer {
+  margin-top: 0.35rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--success-light);
+  color: var(--text-main);
+  white-space: pre-wrap;
+}
+.qb-empty-category {
+  padding: 0 1.25rem 1rem;
+}
+
+/* Question Bank List */
+.qb-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-bottom: 3rem;
+}
+
+.question-item-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  padding: 1.5rem;
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-fast);
+}
+.question-item-card:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-focus);
+}
+
+.question-item-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  font-size: 0.825rem;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.question-tags-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.qb-options-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.75rem;
+  margin: 1.25rem 0;
+}
+
+.qb-option-box {
+  padding: 0.85rem 1rem;
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.95rem;
+  transition: all var(--transition-fast);
+  background: var(--bg-surface);
+}
+.qb-option-box:hover {
+  background: var(--bg-card-subtle);
+  border-color: var(--primary-light);
+}
+.qb-option-box.revealed-correct {
+  background: var(--success-light);
+  border-color: var(--success);
+  color: var(--success-hover);
+  font-weight: 600;
+}
+.qb-option-box.revealed-wrong {
+  background: var(--danger-light);
+  border-color: var(--danger);
+  color: var(--danger-hover);
+  font-weight: 600;
+}
+
+.qb-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 1rem;
+  border-top: 1px solid var(--divider);
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* Practice Test Generator Modal/Page */
+.generator-box {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  padding: 2rem;
+  max-width: 680px;
+  margin: 0 auto 3rem;
+  box-shadow: var(--shadow-md);
+}
+
+.generator-slider-wrap {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.generator-slider-wrap input[type=range] {
+  flex: 1;
+}

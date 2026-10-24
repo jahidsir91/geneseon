@@ -1,0 +1,27 @@
+{
+  "bkash_number": "01518472473",
+  "coupons": {
+    "GENESEON50": {
+      "discountPercent": 30,
+      "maxDiscount": 1500,
+      "expiry": "2026-12-31"
+    },
+    "JA50": {
+      "discountPercent": 50,
+      "maxDiscount": 1500,
+      "expiry": "2026-12-31"
+    },
+    "SHIKKHA20": {
+      "discountPercent": 20,
+      "maxDiscount": 500,
+      "expiry": "2026-12-31"
+    },
+    "BCS100": {
+      "discountAmount": 100,
+      "expiry": "2026-12-31"
+    },
+    "JAHIDSIR91": {
+      "discountPercent": 99
+    }
+  }
+}

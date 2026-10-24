@@ -1,0 +1,67 @@
+[
+  {
+    "id": "prod_bcs_book",
+    "slug": "bcs-46th-preliminary-question-bank-book",
+    "type": "physical",
+    "category": "Books",
+    "educationTypes": ["JOB"],
+    "name": "জেনেসিওন একাডেমি বিসিএস প্রিলিমিনারি প্রশ্নব্যাংক ও পুঙ্খানুপুঙ্খ ব্যাখ্যা (১০ম-৪৬তম বিসিএস)",
+    "price": 480,
+    "originalPrice": 650,
+    "discount": 26,
+    "rating": 4.9,
+    "image": "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=600&auto=format&fit=crop&q=80",
+    "stock": 350,
+    "description": "১০ম থেকে ৪৬তম বিসিএস প্রিলিমিনারি পরীক্ষার প্রতিটি প্রশ্নের নির্ভুল ও সাম্প্রতিক রেফারেন্স সহ ব্যাখ্যা সংবলিত হার্ডকভার বই। সাথে থাকছে হোম ডেলিভারি সুবিধা।",
+    "included": [
+      "হার্ডকভার প্রিমিয়াম প্রিন্টেড বই (৭২০ পৃষ্ঠা)",
+      "অধ্যায়ভিত্তিক সাজানো বিগত বছরের প্রশ্নোত্তর",
+      "ফ্রি স্পেশাল অনলাইন মডেল টেস্ট অ্যাক্সেস"
+    ]
+  },
+  {
+    "id": "prod_ssc_pdf",
+    "slug": "ssc-higher-math-shortcut-formula-sheet",
+    "type": "digital",
+    "category": "PDF",
+    "educationTypes": ["SSC"],
+    "name": "SSC উচ্চতর গণিত ১০০+ শর্টকাট সূত্র ও কনসেপ্ট চিটশিট (HD PDF)",
+    "price": 99,
+    "originalPrice": 250,
+    "discount": 60,
+    "rating": 4.88,
+    "image": "https://images.unsplash.com/photo-1509228468518-180dd4864904?w=600&auto=format&fit=crop&q=80",
+    "fileUrl": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+    "description": "পরীক্ষার আগের রাতের জন্য এসএসসি উচ্চতর গণিতের সকল প্রয়োজনীয় সূত্রের কালারফুল এইচডি ডিজিটাল গাইড। পেমেন্ট করলেই সরাসরি ডাউনলোড করুন।"
+  },
+  {
+    "id": "prod_hsc_notes",
+    "slug": "hsc-chemistry-organic-reaction-map-pdf",
+    "type": "digital",
+    "category": "Notes",
+    "educationTypes": ["HSC"],
+    "name": "HSC জৈব রসায়ন পূর্ণাঙ্গ বিক্রিয়া ফ্লোচার্ট ও রোডম্যাপ (HD Printable PDF)",
+    "price": 149,
+    "originalPrice": 350,
+    "discount": 57,
+    "rating": 4.96,
+    "image": "https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=600&auto=format&fit=crop&q=80",
+    "fileUrl": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+    "description": "জৈব রসায়নের রূপান্তর ও বিক্রিয়া মনে রাখার একমাত্র অল-ইন-ওয়ান ডিজিটাল চার্ট।"
+  },
+  {
+    "id": "prod_model_tests",
+    "slug": "ssc-hsc-job-model-test-paper-bundle",
+    "type": "physical",
+    "category": "Model Tests",
+    "educationTypes": ["SSC", "HSC", "JOB"],
+    "name": "জেনেসিওন একাডেমি ২০টি পূর্ণাঙ্গ মডেল টেস্ট ও ওএমআর শিট বান্ডেল",
+    "price": 320,
+    "originalPrice": 500,
+    "discount": 36,
+    "rating": 4.75,
+    "image": "https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?w=600&auto=format&fit=crop&q=80",
+    "stock": 120,
+    "description": "আসল পরীক্ষার মতো ওএমআর শিটে প্র্যাকটিস করার জন্য ২০ সেট মুদ্রিত মডেল টেস্ট পেপার।"
+  }
+]
