@@ -23,6 +23,27 @@
   z-index: 100;
 }
 
+.exam-rule-notice {
+  max-width: 1240px;
+  margin: 0 auto 1.5rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid #FCD34D;
+  border-radius: var(--radius-md);
+  background: #FFFBEB;
+  color: #78350F;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.exam-rule-notice strong {
+  margin-right: 0.25rem;
+}
+
+.question-card-runner {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 .exam-timer-badge {
   display: flex;
   align-items: center;

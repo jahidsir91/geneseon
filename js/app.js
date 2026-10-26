@@ -4,6 +4,7 @@
 
 import { Auth } from './auth.js';
 import { db } from './db.js';
+import { ExamService } from './services/examService.js';
 import { i18n } from './i18n.js';
 import { icons } from './utils/helpers.js';
 import { Toast } from './utils/toast.js';
@@ -52,6 +53,10 @@ export class App {
     });
 
     await Auth.ready;
+    const activeExam = await ExamService.restoreCurrentSession();
+    if (activeExam && !Auth.isAdmin()) {
+      window.location.hash = `#/exam/${encodeURIComponent(activeExam.examId)}`;
+    }
     await this.loadBranding();
     this.renderHeader();
     this.handleRoute();
@@ -196,14 +201,8 @@ export class App {
       const [path, queryString] = rawHash.split('?');
       const params = new URLSearchParams(queryString || '');
       const activeExam = ExamService.getCurrentSession();
-      if (
-        activeExam &&
-        activeExam.userId === Auth.getUser()?.id &&
-        !Auth.isAdmin() &&
-        path !== `#/exam/${activeExam.examId}`
-      ) {
-        Toast.warning('পরীক্ষা জমা না দেওয়া পর্যন্ত অন্য পেজে যাওয়া যাবে না।');
-        window.location.hash = `#/exam/${encodeURIComponent(activeExam.examId)}`;
+      if (activeExam && !Auth.isAdmin() && path !== `#/exam/${encodeURIComponent(activeExam.examId)}`) {
+        void ExamView.submitAutomatically('অন্য পেজে যাওয়ার চেষ্টা করায়');
         return;
       }
 

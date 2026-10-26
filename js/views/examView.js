@@ -17,6 +17,9 @@ let visibilityChangeHandler = null;
 let beforeUnloadHandler = null;
 let examKeyHandler = null;
 let examContextMenuHandler = null;
+let examCopyHandler = null;
+let examSelectHandler = null;
+let autoSubmitPromise = null;
 
 function getScheduleState(exam, now = Date.now()) {
   const startAt = exam.startAt ? Date.parse(exam.startAt) : null;
@@ -39,6 +42,34 @@ function formatCountdown(seconds) {
     String.fromCharCode('০'.charCodeAt(0) + Number(digit))
   );
   return `${format(hours)}:${format(minutes)}:${format(remainder)}`;
+}
+
+async function submitExamAutomatically(reason = 'পরীক্ষার নিয়ম ভঙ্গ করায়') {
+  if (autoSubmitPromise) return autoSubmitPromise;
+  if (!ExamService.getCurrentSession()) return null;
+
+  if (timerInterval) clearInterval(timerInterval);
+  autoSubmitPromise = (async () => {
+    try {
+      const result = await ExamService.submitExam();
+      if (!result) return null;
+      clearExamGuards();
+      Toast.warning(`${reason} পরীক্ষাটি স্বয়ংক্রিয়ভাবে জমা হয়েছে।`);
+      window.location.hash = `#/exam/result/${result.id}`;
+      return result;
+    } catch (error) {
+      Toast.error(error.message);
+      const session = ExamService.getCurrentSession();
+      if (session) window.location.hash = `#/exam/${encodeURIComponent(session.examId)}`;
+      return null;
+    }
+  })();
+
+  try {
+    return await autoSubmitPromise;
+  } finally {
+    autoSubmitPromise = null;
+  }
 }
 
 function updateScheduleDisplay(exams) {
@@ -72,6 +103,8 @@ function clearExamGuards() {
   if (examContextMenuHandler) {
     document.removeEventListener('contextmenu', examContextMenuHandler, true);
   }
+  if (examCopyHandler) document.removeEventListener('copy', examCopyHandler, true);
+  if (examSelectHandler) document.removeEventListener('selectstart', examSelectHandler, true);
   visibilityChangeHandler = null;
   beforeUnloadHandler = null;
   examKeyHandler = null;
@@ -87,13 +120,16 @@ function guardExamSession(session) {
   visibilityChangeHandler = () => {
     if (document.visibilityState === 'hidden') {
       session.visibilityLossCount = (session.visibilityLossCount || 0) + 1;
-    } else if (session.visibilityLossCount > 2) {
-      Toast.warning('পরীক্ষার সময় দুইবারের বেশি অন্য ট্যাব/অ্যাপে গিয়েছেন। পরীক্ষার কার্যক্রম নজরদারিতে আছে।');
+      session.scrollY = window.scrollY;
+      ExamService.saveCurrentSession();
+      if (session.visibilityLossCount > 2) {
+        void submitExamAutomatically('তিনবারের বেশি অন্য ট্যাব/অ্যাপে যাওয়ায়');
+      }
     }
   };
   beforeUnloadHandler = event => {
-    event.preventDefault();
-    event.returnValue = '';
+    session.scrollY = window.scrollY;
+    ExamService.saveCurrentSession();
   };
   examKeyHandler = event => {
     const key = event.key.toLowerCase();
@@ -107,11 +143,23 @@ function guardExamSession(session) {
     }
   };
   examContextMenuHandler = event => event.preventDefault();
+  examCopyHandler = event => {
+    if (event.target instanceof Element && event.target.closest('.question-card-runner')) {
+      event.preventDefault();
+    }
+  };
+  examSelectHandler = event => {
+    if (event.target instanceof Element && event.target.closest('.question-card-runner')) {
+      event.preventDefault();
+    }
+  };
 
   document.addEventListener('visibilitychange', visibilityChangeHandler);
   window.addEventListener('beforeunload', beforeUnloadHandler);
   document.addEventListener('keydown', examKeyHandler, true);
   document.addEventListener('contextmenu', examContextMenuHandler, true);
+  document.addEventListener('copy', examCopyHandler, true);
+  document.addEventListener('selectstart', examSelectHandler, true);
 }
 
 function escapeHtml(value) {
@@ -121,6 +169,8 @@ function escapeHtml(value) {
 }
 
 export const ExamView = {
+  submitAutomatically: submitExamAutomatically,
+
   renderList(activeTab = 'ALL') {
     if (scheduleInterval) clearInterval(scheduleInterval);
     const user = Auth.getUser();
@@ -135,6 +185,11 @@ export const ExamView = {
         <div class="section-header text-center">
           <h1 style="font-size: 2.2rem; margin-bottom: 0.5rem;">অনলাইন পরীক্ষা ও মডেল টেস্ট</h1>
           <p class="text-muted">বোর্ড স্ট্যান্ডার্ড প্রশ্ন ও নেগেটিভ মার্কিং সহ রিয়েলটাইম এক্সাম</p>
+        </div>
+
+        <div class="exam-rule-notice" role="note">
+          <strong>পরীক্ষার নিয়ম:</strong>
+          পরীক্ষা চলাকালে অন্য ট্যাব/অ্যাপে যাওয়া বা minimize করলে প্রতিবার গণনা হবে; ৩য় বারে পরীক্ষা স্বয়ংক্রিয়ভাবে জমা হবে।
         </div>
 
         <div class="filter-chips justify-center" style="margin-bottom: 2.5rem;">
@@ -200,6 +255,9 @@ export const ExamView = {
       return `<div class="container text-center" style="padding: 4rem;"><h2>পরীক্ষাটি পাওয়া যায়নি</h2><a href="#/exam" class="btn btn-primary">সকল পরীক্ষা</a></div>`;
     }
     if (!Auth.isAdmin()) guardExamSession(session);
+    if (session.scrollY > 0) {
+      requestAnimationFrame(() => window.scrollTo(0, session.scrollY));
+    }
 
     // Start timer interval if not active
     if (timerInterval) clearInterval(timerInterval);
@@ -225,12 +283,7 @@ export const ExamView = {
       if (session.remainingSeconds <= 0) {
         clearInterval(timerInterval);
         Toast.warning('সময় শেষ! পরীক্ষা স্বয়ংক্রিয়ভাবে জমা দেওয়া হচ্ছে...');
-        ExamService.submitExam()
-          .then(result => {
-            clearExamGuards();
-            window.location.hash = `#/exam/result/${result.id}`;
-          })
-          .catch(error => Toast.error(error.message));
+        void submitExamAutomatically('সময় শেষ হওয়ায়');
       }
     }, 1000);
 
@@ -543,9 +596,16 @@ window.selectCQAnswerSheet = (event) => {
     Toast.error('২০ MB-এর মধ্যে একটি PDF উত্তরপত্র নির্বাচন করুন।');
     return;
   }
-  session.cqAnswerSheet = file;
   const name = document.getElementById('cq-answer-sheet-name');
-  if (name) name.textContent = file.name;
+  if (name) name.textContent = 'উত্তরপত্র সংরক্ষণ হচ্ছে...';
+  ExamService.setCQAnswerSheet(file).then(() => {
+    if (name) name.textContent = file.name;
+  }).catch(error => {
+    session.cqAnswerSheet = file;
+    if (name) name.textContent = file.name;
+    console.error('CQ answer sheet could not be saved for exam recovery:', error);
+    Toast.error('CQ উত্তরপত্রটি রিফ্রেশের পর ব্যবহারের জন্য সংরক্ষণ করা যায়নি।');
+  });
 };
 
 // Global Exam Handlers
@@ -621,6 +681,7 @@ window.gotoExamQuestion = (idx) => {
   const session = ExamService.getCurrentSession();
   if (session && session.questions[idx]) {
     session.currentIndex = idx;
+    ExamService.saveCurrentSession();
     document.getElementById(`exam-question-${idx}`)?.scrollIntoView({
       behavior: 'smooth',
       block: 'start'
@@ -656,6 +717,7 @@ window.confirmSubmitExam = () => {
       <button class="btn btn-primary" id="final-exam-submit-btn">হ্যাঁ, জমা দিন</button>
     `
   });
+  document.getElementById('current-modal-backdrop')?.classList.add('exam-submit-modal');
 
   document.getElementById('final-exam-submit-btn')?.addEventListener('click', async () => {
     modalInstance.close();
@@ -670,3 +732,5 @@ window.confirmSubmitExam = () => {
     }
   });
 };
+
+window.submitExamAutomatically = submitExamAutomatically;

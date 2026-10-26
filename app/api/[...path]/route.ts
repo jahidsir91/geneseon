@@ -435,14 +435,14 @@ async function getAdminState() {
     products,
     examAttempts: (attempts.data ?? []).map((row) => row.data),
     paymentOrders: (orders.data ?? []).map((row) => row.order_data),
-    branding: { siteName: process.env.SITE_NAME ?? "Medha EdTech", logoUrl: logoId ? "/api/branding/logo" : null },
+    branding: { siteName: process.env.GENESEON_SITE_NAME ?? "Medha EdTech", logoUrl: logoId ? "/api/branding/logo" : null },
   };
 }
 
 async function getHandler(request: NextRequest, path: string): Promise<Response> {
   if (path === "/api/branding") {
     const setting = await getSetting("brand_logo_id");
-    return json({ siteName: process.env.SITE_NAME ?? "Medha EdTech", logoUrl: setting?.brand_logo_id ? "/api/branding/logo" : null });
+    return json({ siteName: process.env.GENESEON_SITE_NAME ?? "Medha EdTech", logoUrl: setting?.brand_logo_id ? "/api/branding/logo" : null });
   }
   if (path === "/api/branding/logo") {
     const setting = await getSetting("brand_logo_id");

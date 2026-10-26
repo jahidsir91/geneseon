@@ -506,11 +506,21 @@
     padding: 0;
   }
 
+  .modal-backdrop.exam-submit-modal {
+    align-items: center;
+    padding: 1rem;
+  }
+
   .modal-content {
     max-height: 92vh;
     max-height: 92dvh;
     border-radius: var(--radius-xl) var(--radius-xl) 0 0;
     padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .exam-submit-modal .modal-content {
+    border-radius: var(--radius-xl);
+    padding-bottom: 0;
   }
 
   .modal-header,

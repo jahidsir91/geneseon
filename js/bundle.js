@@ -1821,9 +1821,69 @@ const PaymentService = window.PaymentService = {
 /* ==========================================================================
    GENESEON ACADEMY - EXAM ENGINE & DIAGNOSTIC ANALYTICS SERVICE
    ========================================================================== */
+const CURRENT_EXAM_STORAGE_KEY = 'ja_current_exam_session_v1';
+const ANSWER_SHEET_DB_NAME = 'ja_exam_answer_sheet_v1';
+
+function openAnswerSheetStore() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(ANSWER_SHEET_DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore('answerSheets');
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('উত্তরপত্র সংরক্ষণ করা যায়নি।'));
+  });
+}
+
+async function storeAnswerSheet(session, file) {
+  const database = await openAnswerSheetStore();
+  await new Promise((resolve, reject) => {
+    const transaction = database.transaction('answerSheets', 'readwrite');
+    transaction.objectStore('answerSheets').put({
+      blob: file,
+      name: file.name,
+      type: file.type,
+      lastModified: file.lastModified
+    }, session.examId);
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error || new Error('উত্তরপত্র সংরক্ষণ করা যায়নি।'));
+    transaction.onabort = () => reject(transaction.error || new Error('উত্তরপত্র সংরক্ষণ বাতিল হয়েছে।'));
+  });
+  database.close();
+}
+
+async function restoreAnswerSheet(examId) {
+  const database = await openAnswerSheetStore();
+  const stored = await new Promise((resolve, reject) => {
+    const transaction = database.transaction('answerSheets', 'readonly');
+    const request = transaction.objectStore('answerSheets').get(examId);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('উত্তরপত্র পুনরুদ্ধার করা যায়নি।'));
+  });
+  database.close();
+  if (!stored) return null;
+  return new File([stored.blob], stored.name, {
+    type: stored.type,
+    lastModified: stored.lastModified
+  });
+}
+
+async function removeStoredAnswerSheet(examId) {
+  if (!('indexedDB' in window)) return;
+  const database = await openAnswerSheetStore();
+  await new Promise((resolve, reject) => {
+    const transaction = database.transaction('answerSheets', 'readwrite');
+    transaction.objectStore('answerSheets').delete(examId);
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error || new Error('সংরক্ষিত উত্তরপত্র মুছতে পারেনি।'));
+  });
+  database.close();
+}
+
 const ExamService = window.ExamService = {
   currentSession: null,
   timerInterval: null,
+  submissionPromise: null,
 
   startExam(examId) {
     const exam = db.getExamById(examId);
@@ -1895,10 +1955,87 @@ const ExamService = window.ExamService = {
       startTime: Date.now()
     };
 
+    this.saveCurrentSession();
     return this.currentSession;
   },
 
+  saveCurrentSession() {
+    if (!this.currentSession) return;
+    const { cqAnswerSheet, flagged, ...session } = this.currentSession;
+    try {
+      localStorage.setItem(CURRENT_EXAM_STORAGE_KEY, JSON.stringify({
+        ...session,
+        flagged: [...flagged],
+        hasCQAnswerSheet: Boolean(cqAnswerSheet)
+      }));
+    } catch (error) {
+      console.error('Active exam progress could not be saved:', error);
+      Toast.warning('পরীক্ষার অগ্রগতি সংরক্ষণ করা যায়নি।');
+    }
+  },
+
+  async restoreCurrentSession() {
+    let stored;
+    try {
+      const serialized = localStorage.getItem(CURRENT_EXAM_STORAGE_KEY);
+      if (!serialized) return null;
+      stored = JSON.parse(serialized);
+    } catch (error) {
+      console.error('Saved exam progress could not be read:', error);
+      localStorage.removeItem(CURRENT_EXAM_STORAGE_KEY);
+      return null;
+    }
+
+    const userId = Auth.getUser()?.id;
+    if (
+      !stored ||
+      !stored.examId ||
+      !Array.isArray(stored.questions) ||
+      !stored.answers ||
+      !Number.isFinite(stored.deadlineAt) ||
+      stored.userId !== userId
+    ) {
+      localStorage.removeItem(CURRENT_EXAM_STORAGE_KEY);
+      return null;
+    }
+
+    this.currentSession = {
+      ...stored,
+      remainingSeconds: Math.max(0, Math.ceil((stored.deadlineAt - Date.now()) / 1000)),
+      flagged: new Set(Array.isArray(stored.flagged) ? stored.flagged : []),
+      cqAnswerSheet: null
+    };
+
+    if (stored.hasCQAnswerSheet) {
+      try {
+        this.currentSession.cqAnswerSheet = await restoreAnswerSheet(stored.examId);
+        if (!this.currentSession.cqAnswerSheet) {
+          Toast.warning('সংরক্ষিত CQ উত্তরপত্র পাওয়া যায়নি; আবার PDF নির্বাচন করুন।');
+        }
+      } catch (error) {
+        console.error('Saved CQ answer sheet could not be restored:', error);
+        Toast.warning('CQ উত্তরপত্র পুনরুদ্ধার করা যায়নি; আবার PDF নির্বাচন করুন।');
+      }
+    }
+
+    return this.currentSession;
+  },
+
+  async setCQAnswerSheet(file) {
+    if (!this.currentSession) return false;
+    await storeAnswerSheet(this.currentSession, file);
+    this.currentSession.cqAnswerSheet = file;
+    this.saveCurrentSession();
+    return true;
+  },
+
   getCurrentSession() {
+    if (this.currentSession) {
+      this.currentSession.remainingSeconds = Math.max(
+        0,
+        Math.ceil((this.currentSession.deadlineAt - Date.now()) / 1000)
+      );
+    }
     return this.currentSession;
   },
 
@@ -1912,6 +2049,7 @@ const ExamService = window.ExamService = {
       return false;
     }
     this.currentSession.answers[questionId] = optionIndex;
+    this.saveCurrentSession();
     return true;
   },
 
@@ -1922,14 +2060,28 @@ const ExamService = window.ExamService = {
     } else {
       this.currentSession.flagged.add(questionId);
     }
+    this.saveCurrentSession();
   },
 
-  async submitExam() {
+  submitExam() {
+    if (this.submissionPromise) return this.submissionPromise;
+    if (!this.currentSession) return Promise.resolve(null);
+    this.submissionPromise = this.submitCurrentSession().finally(() => {
+      this.submissionPromise = null;
+    });
+    return this.submissionPromise;
+  },
+
+  async submitCurrentSession() {
     if (!this.currentSession) return null;
     if (this.timerInterval) clearInterval(this.timerInterval);
 
     const user = Auth.getUser();
     const session = this.currentSession;
+    session.remainingSeconds = Math.max(
+      0,
+      Math.ceil((session.deadlineAt - Date.now()) / 1000)
+    );
     const questions = session.questions;
 
     let correctCount = 0;
@@ -2027,6 +2179,12 @@ const ExamService = window.ExamService = {
 
     db.addExamAttempt(resultRecord);
     this.currentSession = null;
+    localStorage.removeItem(CURRENT_EXAM_STORAGE_KEY);
+    try {
+      await removeStoredAnswerSheet(session.examId);
+    } catch (error) {
+      console.error('Submitted CQ answer sheet could not be removed from local storage:', error);
+    }
     launchConfetti();
 
     return resultRecord;
@@ -2995,6 +3153,9 @@ let visibilityChangeHandler = null;
 let beforeUnloadHandler = null;
 let examKeyHandler = null;
 let examContextMenuHandler = null;
+let examCopyHandler = null;
+let examSelectHandler = null;
+let autoSubmitPromise = null;
 
 function getScheduleState(exam, now = Date.now()) {
   const startAt = exam.startAt ? Date.parse(exam.startAt) : null;
@@ -3017,6 +3178,34 @@ function formatCountdown(seconds) {
     String.fromCharCode('০'.charCodeAt(0) + Number(digit))
   );
   return `${format(hours)}:${format(minutes)}:${format(remainder)}`;
+}
+
+async function submitExamAutomatically(reason = 'পরীক্ষার নিয়ম ভঙ্গ করায়') {
+  if (autoSubmitPromise) return autoSubmitPromise;
+  if (!ExamService.getCurrentSession()) return null;
+
+  if (timerInterval) clearInterval(timerInterval);
+  autoSubmitPromise = (async () => {
+    try {
+      const result = await ExamService.submitExam();
+      if (!result) return null;
+      clearExamGuards();
+      Toast.warning(`${reason} পরীক্ষাটি স্বয়ংক্রিয়ভাবে জমা হয়েছে।`);
+      window.location.hash = `#/exam/result/${result.id}`;
+      return result;
+    } catch (error) {
+      Toast.error(error.message);
+      const session = ExamService.getCurrentSession();
+      if (session) window.location.hash = `#/exam/${encodeURIComponent(session.examId)}`;
+      return null;
+    }
+  })();
+
+  try {
+    return await autoSubmitPromise;
+  } finally {
+    autoSubmitPromise = null;
+  }
 }
 
 function updateScheduleDisplay(exams) {
@@ -3050,6 +3239,8 @@ function clearExamGuards() {
   if (examContextMenuHandler) {
     document.removeEventListener('contextmenu', examContextMenuHandler, true);
   }
+  if (examCopyHandler) document.removeEventListener('copy', examCopyHandler, true);
+  if (examSelectHandler) document.removeEventListener('selectstart', examSelectHandler, true);
   visibilityChangeHandler = null;
   beforeUnloadHandler = null;
   examKeyHandler = null;
@@ -3065,13 +3256,16 @@ function guardExamSession(session) {
   visibilityChangeHandler = () => {
     if (document.visibilityState === 'hidden') {
       session.visibilityLossCount = (session.visibilityLossCount || 0) + 1;
-    } else if (session.visibilityLossCount > 2) {
-      Toast.warning('পরীক্ষার সময় দুইবারের বেশি অন্য ট্যাব/অ্যাপে গিয়েছেন। পরীক্ষার কার্যক্রম নজরদারিতে আছে।');
+      session.scrollY = window.scrollY;
+      ExamService.saveCurrentSession();
+      if (session.visibilityLossCount > 2) {
+        void submitExamAutomatically('তিনবারের বেশি অন্য ট্যাব/অ্যাপে যাওয়ায়');
+      }
     }
   };
   beforeUnloadHandler = event => {
-    event.preventDefault();
-    event.returnValue = '';
+    session.scrollY = window.scrollY;
+    ExamService.saveCurrentSession();
   };
   examKeyHandler = event => {
     const key = event.key.toLowerCase();
@@ -3085,11 +3279,23 @@ function guardExamSession(session) {
     }
   };
   examContextMenuHandler = event => event.preventDefault();
+  examCopyHandler = event => {
+    if (event.target instanceof Element && event.target.closest('.question-card-runner')) {
+      event.preventDefault();
+    }
+  };
+  examSelectHandler = event => {
+    if (event.target instanceof Element && event.target.closest('.question-card-runner')) {
+      event.preventDefault();
+    }
+  };
 
   document.addEventListener('visibilitychange', visibilityChangeHandler);
   window.addEventListener('beforeunload', beforeUnloadHandler);
   document.addEventListener('keydown', examKeyHandler, true);
   document.addEventListener('contextmenu', examContextMenuHandler, true);
+  document.addEventListener('copy', examCopyHandler, true);
+  document.addEventListener('selectstart', examSelectHandler, true);
 }
 
 function escapeHtml(value) {
@@ -3098,6 +3304,8 @@ function escapeHtml(value) {
   })[char]);
 }
 const ExamView = window.ExamView = {
+  submitAutomatically: submitExamAutomatically,
+
   renderList(activeTab = 'ALL') {
     if (scheduleInterval) clearInterval(scheduleInterval);
     const user = Auth.getUser();
@@ -3112,6 +3320,11 @@ const ExamView = window.ExamView = {
         <div class="section-header text-center">
           <h1 style="font-size: 2.2rem; margin-bottom: 0.5rem;">অনলাইন পরীক্ষা ও মডেল টেস্ট</h1>
           <p class="text-muted">বোর্ড স্ট্যান্ডার্ড প্রশ্ন ও নেগেটিভ মার্কিং সহ রিয়েলটাইম এক্সাম</p>
+        </div>
+
+        <div class="exam-rule-notice" role="note">
+          <strong>পরীক্ষার নিয়ম:</strong>
+          পরীক্ষা চলাকালে অন্য ট্যাব/অ্যাপে যাওয়া বা minimize করলে প্রতিবার গণনা হবে; ৩য় বারে পরীক্ষা স্বয়ংক্রিয়ভাবে জমা হবে।
         </div>
 
         <div class="filter-chips justify-center" style="margin-bottom: 2.5rem;">
@@ -3177,6 +3390,9 @@ const ExamView = window.ExamView = {
       return `<div class="container text-center" style="padding: 4rem;"><h2>পরীক্ষাটি পাওয়া যায়নি</h2><a href="#/exam" class="btn btn-primary">সকল পরীক্ষা</a></div>`;
     }
     if (!Auth.isAdmin()) guardExamSession(session);
+    if (session.scrollY > 0) {
+      requestAnimationFrame(() => window.scrollTo(0, session.scrollY));
+    }
 
     // Start timer interval if not active
     if (timerInterval) clearInterval(timerInterval);
@@ -3202,12 +3418,7 @@ const ExamView = window.ExamView = {
       if (session.remainingSeconds <= 0) {
         clearInterval(timerInterval);
         Toast.warning('সময় শেষ! পরীক্ষা স্বয়ংক্রিয়ভাবে জমা দেওয়া হচ্ছে...');
-        ExamService.submitExam()
-          .then(result => {
-            clearExamGuards();
-            window.location.hash = `#/exam/result/${result.id}`;
-          })
-          .catch(error => Toast.error(error.message));
+        void submitExamAutomatically('সময় শেষ হওয়ায়');
       }
     }, 1000);
 
@@ -3520,9 +3731,16 @@ window.selectCQAnswerSheet = (event) => {
     Toast.error('২০ MB-এর মধ্যে একটি PDF উত্তরপত্র নির্বাচন করুন।');
     return;
   }
-  session.cqAnswerSheet = file;
   const name = document.getElementById('cq-answer-sheet-name');
-  if (name) name.textContent = file.name;
+  if (name) name.textContent = 'উত্তরপত্র সংরক্ষণ হচ্ছে...';
+  ExamService.setCQAnswerSheet(file).then(() => {
+    if (name) name.textContent = file.name;
+  }).catch(error => {
+    session.cqAnswerSheet = file;
+    if (name) name.textContent = file.name;
+    console.error('CQ answer sheet could not be saved for exam recovery:', error);
+    Toast.error('CQ উত্তরপত্রটি রিফ্রেশের পর ব্যবহারের জন্য সংরক্ষণ করা যায়নি।');
+  });
 };
 
 // Global Exam Handlers
@@ -3598,6 +3816,7 @@ window.gotoExamQuestion = (idx) => {
   const session = ExamService.getCurrentSession();
   if (session && session.questions[idx]) {
     session.currentIndex = idx;
+    ExamService.saveCurrentSession();
     document.getElementById(`exam-question-${idx}`)?.scrollIntoView({
       behavior: 'smooth',
       block: 'start'
@@ -3633,6 +3852,7 @@ window.confirmSubmitExam = () => {
       <button class="btn btn-primary" id="final-exam-submit-btn">হ্যাঁ, জমা দিন</button>
     `
   });
+  document.getElementById('current-modal-backdrop')?.classList.add('exam-submit-modal');
 
   document.getElementById('final-exam-submit-btn')?.addEventListener('click', async () => {
     modalInstance.close();
@@ -3647,6 +3867,8 @@ window.confirmSubmitExam = () => {
     }
   });
 };
+
+window.submitExamAutomatically = submitExamAutomatically;
 
 
 /* --- [js/views/questionBankView.js] --- */
@@ -7812,6 +8034,10 @@ class App {
     });
 
     await Auth.ready;
+    const activeExam = await ExamService.restoreCurrentSession();
+    if (activeExam && !Auth.isAdmin()) {
+      window.location.hash = `#/exam/${encodeURIComponent(activeExam.examId)}`;
+    }
     await this.loadBranding();
     this.renderHeader();
     this.handleRoute();
@@ -7956,14 +8182,8 @@ class App {
       const [path, queryString] = rawHash.split('?');
       const params = new URLSearchParams(queryString || '');
       const activeExam = ExamService.getCurrentSession();
-      if (
-        activeExam &&
-        activeExam.userId === Auth.getUser()?.id &&
-        !Auth.isAdmin() &&
-        path !== `#/exam/${activeExam.examId}`
-      ) {
-        Toast.warning('পরীক্ষা জমা না দেওয়া পর্যন্ত অন্য পেজে যাওয়া যাবে না।');
-        window.location.hash = `#/exam/${encodeURIComponent(activeExam.examId)}`;
+      if (activeExam && !Auth.isAdmin() && path !== `#/exam/${encodeURIComponent(activeExam.examId)}`) {
+        void ExamView.submitAutomatically('অন্য পেজে যাওয়ার চেষ্টা করায়');
         return;
       }
 

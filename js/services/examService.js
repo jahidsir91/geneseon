@@ -7,9 +7,69 @@ import { Auth } from '../auth.js';
 import { uid, launchConfetti } from '../utils/helpers.js';
 import { Toast } from '../utils/toast.js';
 
+const CURRENT_EXAM_STORAGE_KEY = 'ja_current_exam_session_v1';
+const ANSWER_SHEET_DB_NAME = 'ja_exam_answer_sheet_v1';
+
+function openAnswerSheetStore() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(ANSWER_SHEET_DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore('answerSheets');
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('উত্তরপত্র সংরক্ষণ করা যায়নি।'));
+  });
+}
+
+async function storeAnswerSheet(session, file) {
+  const database = await openAnswerSheetStore();
+  await new Promise((resolve, reject) => {
+    const transaction = database.transaction('answerSheets', 'readwrite');
+    transaction.objectStore('answerSheets').put({
+      blob: file,
+      name: file.name,
+      type: file.type,
+      lastModified: file.lastModified
+    }, session.examId);
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error || new Error('উত্তরপত্র সংরক্ষণ করা যায়নি।'));
+    transaction.onabort = () => reject(transaction.error || new Error('উত্তরপত্র সংরক্ষণ বাতিল হয়েছে।'));
+  });
+  database.close();
+}
+
+async function restoreAnswerSheet(examId) {
+  const database = await openAnswerSheetStore();
+  const stored = await new Promise((resolve, reject) => {
+    const transaction = database.transaction('answerSheets', 'readonly');
+    const request = transaction.objectStore('answerSheets').get(examId);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('উত্তরপত্র পুনরুদ্ধার করা যায়নি।'));
+  });
+  database.close();
+  if (!stored) return null;
+  return new File([stored.blob], stored.name, {
+    type: stored.type,
+    lastModified: stored.lastModified
+  });
+}
+
+async function removeStoredAnswerSheet(examId) {
+  if (!('indexedDB' in window)) return;
+  const database = await openAnswerSheetStore();
+  await new Promise((resolve, reject) => {
+    const transaction = database.transaction('answerSheets', 'readwrite');
+    transaction.objectStore('answerSheets').delete(examId);
+    transaction.oncomplete = resolve;
+    transaction.onerror = () => reject(transaction.error || new Error('সংরক্ষিত উত্তরপত্র মুছতে পারেনি।'));
+  });
+  database.close();
+}
+
 export const ExamService = {
   currentSession: null,
   timerInterval: null,
+  submissionPromise: null,
 
   startExam(examId) {
     const exam = db.getExamById(examId);
@@ -81,10 +141,87 @@ export const ExamService = {
       startTime: Date.now()
     };
 
+    this.saveCurrentSession();
     return this.currentSession;
   },
 
+  saveCurrentSession() {
+    if (!this.currentSession) return;
+    const { cqAnswerSheet, flagged, ...session } = this.currentSession;
+    try {
+      localStorage.setItem(CURRENT_EXAM_STORAGE_KEY, JSON.stringify({
+        ...session,
+        flagged: [...flagged],
+        hasCQAnswerSheet: Boolean(cqAnswerSheet)
+      }));
+    } catch (error) {
+      console.error('Active exam progress could not be saved:', error);
+      Toast.warning('পরীক্ষার অগ্রগতি সংরক্ষণ করা যায়নি।');
+    }
+  },
+
+  async restoreCurrentSession() {
+    let stored;
+    try {
+      const serialized = localStorage.getItem(CURRENT_EXAM_STORAGE_KEY);
+      if (!serialized) return null;
+      stored = JSON.parse(serialized);
+    } catch (error) {
+      console.error('Saved exam progress could not be read:', error);
+      localStorage.removeItem(CURRENT_EXAM_STORAGE_KEY);
+      return null;
+    }
+
+    const userId = Auth.getUser()?.id;
+    if (
+      !stored ||
+      !stored.examId ||
+      !Array.isArray(stored.questions) ||
+      !stored.answers ||
+      !Number.isFinite(stored.deadlineAt) ||
+      stored.userId !== userId
+    ) {
+      localStorage.removeItem(CURRENT_EXAM_STORAGE_KEY);
+      return null;
+    }
+
+    this.currentSession = {
+      ...stored,
+      remainingSeconds: Math.max(0, Math.ceil((stored.deadlineAt - Date.now()) / 1000)),
+      flagged: new Set(Array.isArray(stored.flagged) ? stored.flagged : []),
+      cqAnswerSheet: null
+    };
+
+    if (stored.hasCQAnswerSheet) {
+      try {
+        this.currentSession.cqAnswerSheet = await restoreAnswerSheet(stored.examId);
+        if (!this.currentSession.cqAnswerSheet) {
+          Toast.warning('সংরক্ষিত CQ উত্তরপত্র পাওয়া যায়নি; আবার PDF নির্বাচন করুন।');
+        }
+      } catch (error) {
+        console.error('Saved CQ answer sheet could not be restored:', error);
+        Toast.warning('CQ উত্তরপত্র পুনরুদ্ধার করা যায়নি; আবার PDF নির্বাচন করুন।');
+      }
+    }
+
+    return this.currentSession;
+  },
+
+  async setCQAnswerSheet(file) {
+    if (!this.currentSession) return false;
+    await storeAnswerSheet(this.currentSession, file);
+    this.currentSession.cqAnswerSheet = file;
+    this.saveCurrentSession();
+    return true;
+  },
+
   getCurrentSession() {
+    if (this.currentSession) {
+      this.currentSession.remainingSeconds = Math.max(
+        0,
+        Math.ceil((this.currentSession.deadlineAt - Date.now()) / 1000)
+      );
+    }
     return this.currentSession;
   },
 
@@ -98,6 +235,7 @@ export const ExamService = {
       return false;
     }
     this.currentSession.answers[questionId] = optionIndex;
+    this.saveCurrentSession();
     return true;
   },
 
@@ -108,14 +246,28 @@ export const ExamService = {
     } else {
       this.currentSession.flagged.add(questionId);
     }
+    this.saveCurrentSession();
   },
 
-  async submitExam() {
+  submitExam() {
+    if (this.submissionPromise) return this.submissionPromise;
+    if (!this.currentSession) return Promise.resolve(null);
+    this.submissionPromise = this.submitCurrentSession().finally(() => {
+      this.submissionPromise = null;
+    });
+    return this.submissionPromise;
+  },
+
+  async submitCurrentSession() {
     if (!this.currentSession) return null;
     if (this.timerInterval) clearInterval(this.timerInterval);
 
     const user = Auth.getUser();
     const session = this.currentSession;
+    session.remainingSeconds = Math.max(
+      0,
+      Math.ceil((session.deadlineAt - Date.now()) / 1000)
+    );
     const questions = session.questions;
 
     let correctCount = 0;
@@ -213,6 +365,12 @@ export const ExamService = {
 
     db.addExamAttempt(resultRecord);
     this.currentSession = null;
+    localStorage.removeItem(CURRENT_EXAM_STORAGE_KEY);
+    try {
+      await removeStoredAnswerSheet(session.examId);
+    } catch (error) {
+      console.error('Submitted CQ answer sheet could not be removed from local storage:', error);
+    }
     launchConfetti();
 
     return resultRecord;

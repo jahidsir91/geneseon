@@ -16,6 +16,8 @@ PUBLIC_APP_URL=http://localhost:3000
 Never commit `.env.local` or expose the service-role key in browser code. Apply [`supabase/migrations/0001_initial_schema.sql`](./supabase/migrations/0001_initial_schema.sql) to your Supabase project, then run:
 
 ```powershell
+npm.cmd install
+npm.cmd run dev
 npm install
 npm run dev
 ```
