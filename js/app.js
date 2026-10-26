@@ -117,17 +117,25 @@ export class App {
         </a>
 
         <!-- Desktop Navigation Links -->
-        <ul class="nav-links">
+        <ul class="nav-links" id="site-navigation">
           <li><a href="${homeRoute}" class="nav-link ${currentHash === homeRoute ? 'active' : ''}">${i18n.t('home')}</a></li>
           <li><a href="#/courses" class="nav-link ${currentHash.startsWith('#/courses') || currentHash.startsWith('#/course') ? 'active' : ''}">${i18n.t('courses')}</a></li>
           <li><a href="#/store" class="nav-link ${currentHash.startsWith('#/store') ? 'active' : ''}">${i18n.t('store')}</a></li>
           <li><a href="#/exam" class="nav-link ${currentHash.startsWith('#/exam') ? 'active' : ''}">${i18n.t('exam')}</a></li>
           <li><a href="#/question-bank" class="nav-link ${currentHash.startsWith('#/question-bank') ? 'active' : ''}">${i18n.t('questionBank')}</a></li>
           <li><a href="#/ai" class="nav-link ${currentHash.startsWith('#/ai') ? 'active' : ''}" style="font-weight: 700;">${i18n.t('aiAssistant')}</a></li>
+          ${!user ? `
+            <li class="mobile-auth-link"><a href="#/login" class="nav-link">${i18n.t('login')}</a></li>
+            <li class="mobile-auth-link"><a href="#/register" class="nav-link">${i18n.t('signUp')}</a></li>
+          ` : ''}
         </ul>
 
         <!-- Right Side Header Actions -->
         <div class="header-actions">
+          <button class="mobile-menu-toggle" type="button" aria-label="মেনু খুলুন" aria-expanded="false" aria-controls="site-navigation" onclick="const menu = document.getElementById('site-navigation'); const isOpen = menu.classList.toggle('open'); this.setAttribute('aria-expanded', String(isOpen)); this.setAttribute('aria-label', isOpen ? 'মেনু বন্ধ করুন' : 'মেনু খুলুন');">
+            <span></span><span></span><span></span>
+          </button>
+
           <!-- Language Toggle Button -->
           <button class="btn btn-ghost btn-sm" onclick="i18n.toggleLang()" title="Switch Language" style="font-weight: 700; border: 1px solid var(--border-color); border-radius: var(--radius-full); padding: 0.35rem 0.65rem;">
             🌐 ${i18n.getLang() === 'bn' ? 'EN' : 'বাংলা'}

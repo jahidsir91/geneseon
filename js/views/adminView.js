@@ -425,6 +425,7 @@ export const AdminView = {
 
     return `
       <div class="admin-layout">
+        <button class="admin-menu-backdrop" id="admin-menu-backdrop" type="button" aria-label="মেনু বন্ধ করুন" onclick="document.getElementById('admin-sidebar').classList.remove('open'); document.querySelector('.admin-menu-toggle').setAttribute('aria-expanded', 'false'); this.classList.remove('active');"></button>
         <!-- Admin Dark Sidebar -->
         <aside class="admin-sidebar" id="admin-sidebar">
           <div class="admin-brand">
@@ -480,6 +481,9 @@ export const AdminView = {
         <main class="admin-main">
           <!-- Top Bar -->
           <header class="admin-top-bar">
+            <button class="admin-menu-toggle btn btn-secondary btn-sm" type="button" aria-label="অ্যাডমিন মেনু খুলুন" aria-controls="admin-sidebar" aria-expanded="false" onclick="const sidebar = document.getElementById('admin-sidebar'); const backdrop = document.getElementById('admin-menu-backdrop'); const isOpen = sidebar.classList.toggle('open'); backdrop.classList.toggle('active', isOpen); this.setAttribute('aria-expanded', String(isOpen));">
+              <span aria-hidden="true">☰</span><span>মেনু</span>
+            </button>
             <div>
               <h2 style="font-size: 1.25rem; font-weight: 700;">Geneseon Academy Admin Control Center</h2>
               <span class="text-muted" style="font-size: 0.825rem;">লাইভ ডাটাবেজ সিঙ্ক সক্রিয় • সংস্করণ ১.০</span>

@@ -5665,6 +5665,7 @@ const AdminView = window.AdminView = {
 
     return `
       <div class="admin-layout">
+        <button class="admin-menu-backdrop" id="admin-menu-backdrop" type="button" aria-label="মেনু বন্ধ করুন" onclick="document.getElementById('admin-sidebar').classList.remove('open'); document.querySelector('.admin-menu-toggle').setAttribute('aria-expanded', 'false'); this.classList.remove('active');"></button>
         <!-- Admin Dark Sidebar -->
         <aside class="admin-sidebar" id="admin-sidebar">
           <div class="admin-brand">
@@ -5720,6 +5721,9 @@ const AdminView = window.AdminView = {
         <main class="admin-main">
           <!-- Top Bar -->
           <header class="admin-top-bar">
+            <button class="admin-menu-toggle btn btn-secondary btn-sm" type="button" aria-label="অ্যাডমিন মেনু খুলুন" aria-controls="admin-sidebar" aria-expanded="false" onclick="const sidebar = document.getElementById('admin-sidebar'); const backdrop = document.getElementById('admin-menu-backdrop'); const isOpen = sidebar.classList.toggle('open'); backdrop.classList.toggle('active', isOpen); this.setAttribute('aria-expanded', String(isOpen));">
+              <span aria-hidden="true">☰</span><span>মেনু</span>
+            </button>
             <div>
               <h2 style="font-size: 1.25rem; font-weight: 700;">Geneseon Academy Admin Control Center</h2>
               <span class="text-muted" style="font-size: 0.825rem;">লাইভ ডাটাবেজ সিঙ্ক সক্রিয় • সংস্করণ ১.০</span>
@@ -7873,17 +7877,25 @@ class App {
         </a>
 
         <!-- Desktop Navigation Links -->
-        <ul class="nav-links">
+        <ul class="nav-links" id="site-navigation">
           <li><a href="${homeRoute}" class="nav-link ${currentHash === homeRoute ? 'active' : ''}">${i18n.t('home')}</a></li>
           <li><a href="#/courses" class="nav-link ${currentHash.startsWith('#/courses') || currentHash.startsWith('#/course') ? 'active' : ''}">${i18n.t('courses')}</a></li>
           <li><a href="#/store" class="nav-link ${currentHash.startsWith('#/store') ? 'active' : ''}">${i18n.t('store')}</a></li>
           <li><a href="#/exam" class="nav-link ${currentHash.startsWith('#/exam') ? 'active' : ''}">${i18n.t('exam')}</a></li>
           <li><a href="#/question-bank" class="nav-link ${currentHash.startsWith('#/question-bank') ? 'active' : ''}">${i18n.t('questionBank')}</a></li>
           <li><a href="#/ai" class="nav-link ${currentHash.startsWith('#/ai') ? 'active' : ''}" style="font-weight: 700;">${i18n.t('aiAssistant')}</a></li>
+          ${!user ? `
+            <li class="mobile-auth-link"><a href="#/login" class="nav-link">${i18n.t('login')}</a></li>
+            <li class="mobile-auth-link"><a href="#/register" class="nav-link">${i18n.t('signUp')}</a></li>
+          ` : ''}
         </ul>
 
         <!-- Right Side Header Actions -->
         <div class="header-actions">
+          <button class="mobile-menu-toggle" type="button" aria-label="মেনু খুলুন" aria-expanded="false" aria-controls="site-navigation" onclick="const menu = document.getElementById('site-navigation'); const isOpen = menu.classList.toggle('open'); this.setAttribute('aria-expanded', String(isOpen)); this.setAttribute('aria-label', isOpen ? 'মেনু বন্ধ করুন' : 'মেনু খুলুন');">
+            <span></span><span></span><span></span>
+          </button>
+
           <!-- Language Toggle Button -->
           <button class="btn btn-ghost btn-sm" onclick="i18n.toggleLang()" title="Switch Language" style="font-weight: 700; border: 1px solid var(--border-color); border-radius: var(--radius-full); padding: 0.35rem 0.65rem;">
             🌐 ${i18n.getLang() === 'bn' ? 'EN' : 'বাংলা'}
