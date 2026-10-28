@@ -116,11 +116,18 @@ function guardExamSession(session) {
   if (guardedSessionId === session.examId) return;
   clearExamGuards();
   guardedSessionId = session.examId;
+  let pendingVisibilityLoss = false;
 
   visibilityChangeHandler = () => {
     if (document.visibilityState === 'hidden') {
-      session.visibilityLossCount = (session.visibilityLossCount || 0) + 1;
+      pendingVisibilityLoss = true;
       session.scrollY = window.scrollY;
+      ExamService.saveCurrentSession();
+      return;
+    }
+    if (pendingVisibilityLoss) {
+      pendingVisibilityLoss = false;
+      session.visibilityLossCount = (session.visibilityLossCount || 0) + 1;
       ExamService.saveCurrentSession();
       if (session.visibilityLossCount > 2) {
         void submitExamAutomatically('তিনবারের বেশি অন্য ট্যাব/অ্যাপে যাওয়ায়');

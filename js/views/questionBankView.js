@@ -162,6 +162,51 @@ function refreshQuestionCard(questionId) {
   currentCard.remove();
 }
 
+function renderQuestionSubjects(group, prefixes) {
+  return group.subjects.length ? group.subjects.map(subjectGroup => `
+    <details class="qb-subject-group">
+      <summary>
+        <span>${escapeHtml(subjectGroup.subject)}</span>
+        <span class="qb-hierarchy-count">${subjectGroup.chapters.reduce((sum, chapter) => sum + chapter.questions.length, 0)}টি প্রশ্ন</span>
+      </summary>
+      ${subjectGroup.chapters.map(chapterGroup => `
+        <details class="qb-chapter-group">
+          <summary>
+            <span>${escapeHtml(chapterGroup.chapter)}</span>
+            <span class="qb-hierarchy-count">${chapterGroup.questions.length}টি প্রশ্ন</span>
+          </summary>
+          ${['MCQ', 'CQ', 'WRITTEN'].map(type => {
+            const typedQuestions = chapterGroup.questions.filter(question =>
+              (question.questionType || 'MCQ') === type
+            );
+            const typeLabel = type === 'WRITTEN' ? 'Written' : type;
+            return `
+              <details class="qb-type-group">
+                <summary>
+                  <span>${typeLabel}</span>
+                  <span class="qb-hierarchy-count">${typedQuestions.length}টি প্রশ্ন</span>
+                </summary>
+                <div class="qb-chapter-questions">
+                  ${typedQuestions.map((question, index) =>
+                    type === 'CQ'
+                      ? renderCQCard(question, index)
+                      : type === 'WRITTEN'
+                        ? renderWrittenCard(question, index)
+                        : renderQuestionCard(question, index, prefixes)
+                  ).join('')}
+                  ${typedQuestions.length ? '' : '<p class="text-muted qb-empty-type">এই ধরনের কোনো প্রশ্ন নেই।</p>'}
+                </div>
+              </details>
+            `;
+          }).join('')}
+        </details>
+      `).join('')}
+    </details>
+  `).join('') : `
+    <p class="text-muted qb-empty-category">এই ক্যাটাগরিতে এখনো কোনো প্রশ্ন নেই।</p>
+  `;
+}
+
 export const QuestionBankView = {
   renderList() {
     const user = Auth.getUser();
@@ -215,56 +260,18 @@ export const QuestionBankView = {
 
       <div class="container">
         <div class="qb-hierarchy">
-          ${questionHierarchy.map(group => `
-            <details class="qb-category-group">
-              <summary>
-                <span>${categoryLabels[group.category] || escapeHtml(group.category)}</span>
-                <span class="qb-hierarchy-count">${group.questions.length}টি প্রশ্ন</span>
-              </summary>
-              ${group.subjects.length ? group.subjects.map(subjectGroup => `
-                <details class="qb-subject-group">
-                  <summary>
-                    <span>${escapeHtml(subjectGroup.subject)}</span>
-                    <span class="qb-hierarchy-count">${subjectGroup.chapters.reduce((sum, chapter) => sum + chapter.questions.length, 0)}টি প্রশ্ন</span>
-                  </summary>
-                  ${subjectGroup.chapters.map(chapterGroup => `
-                    <details class="qb-chapter-group">
-                      <summary>
-                        <span>${escapeHtml(chapterGroup.chapter)}</span>
-                        <span class="qb-hierarchy-count">${chapterGroup.questions.length}টি প্রশ্ন</span>
-                      </summary>
-                      ${['MCQ', 'CQ', 'WRITTEN'].map(type => {
-                        const typedQuestions = chapterGroup.questions.filter(question =>
-                          (question.questionType || 'MCQ') === type
-                        );
-                        const typeLabel = type === 'WRITTEN' ? 'Written' : type;
-                        return `
-                          <details class="qb-type-group">
-                            <summary>
-                              <span>${typeLabel}</span>
-                              <span class="qb-hierarchy-count">${typedQuestions.length}টি প্রশ্ন</span>
-                            </summary>
-                            <div class="qb-chapter-questions">
-                              ${typedQuestions.map((question, index) =>
-                                type === 'CQ'
-                                  ? renderCQCard(question, index)
-                                  : type === 'WRITTEN'
-                                    ? renderWrittenCard(question, index)
-                                    : renderQuestionCard(question, index, prefixes)
-                              ).join('')}
-                              ${typedQuestions.length ? '' : '<p class="text-muted qb-empty-type">এই ধরনের কোনো প্রশ্ন নেই।</p>'}
-                            </div>
-                          </details>
-                        `;
-                      }).join('')}
-                    </details>
-                  `).join('')}
-                </details>
-              `).join('') : `
-                <p class="text-muted qb-empty-category">এই ক্যাটাগরিতে এখনো কোনো প্রশ্ন নেই।</p>
-              `}
-            </details>
-          `).join('')}
+          ${questionHierarchy.map(group => user && !Auth.isAdmin()
+            ? renderQuestionSubjects(group, prefixes)
+            : `
+              <details class="qb-category-group">
+                <summary>
+                  <span>${categoryLabels[group.category] || escapeHtml(group.category)}</span>
+                  <span class="qb-hierarchy-count">${group.questions.length}টি প্রশ্ন</span>
+                </summary>
+                ${renderQuestionSubjects(group, prefixes)}
+              </details>
+            `
+          ).join('')}
         </div>
       </div>
     `;
@@ -395,16 +402,33 @@ window.toggleQBExplanation = (qid) => {
 };
 
 window.askAiAboutQuestion = async (qid) => {
-  if (!db.getQuestionById(qid)) return;
+  const question = db.getQuestionById(qid);
+  if (!question) return;
   Modal.open({
     title: 'Gemini AI সমাধান',
-    content: '<div id="gemini-question-solution" role="status">Gemini AI থেকে সমাধান তৈরি হচ্ছে...</div>'
+    content: '<div id="gemini-question-solution" role="status">সংরক্ষিত সমাধান খোঁজা হচ্ছে...</div>'
   });
   try {
     const response = await fetch('/api/ai/question-solution', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ questionId: qid })
+      body: JSON.stringify({
+        questionId: qid,
+        question: {
+          id: question.id,
+          category: question.category,
+          subject: question.subject,
+          chapter: question.chapter,
+          questionType: question.questionType,
+          text: question.text,
+          stimulus: question.stimulus,
+          parts: question.parts,
+          options: question.options,
+          correctIndex: question.correctIndex,
+          explanation: question.explanation,
+          answer: question.answer
+        }
+      })
     });
     const result = await response.json();
     if (!response.ok) {
@@ -415,6 +439,14 @@ window.askAiAboutQuestion = async (qid) => {
       solution.textContent = result.solution;
       solution.style.whiteSpace = 'pre-wrap';
       solution.style.lineHeight = '1.8';
+      const savedStatus = document.createElement('small');
+      savedStatus.className = 'text-muted';
+      savedStatus.style.display = 'block';
+      savedStatus.style.marginTop = '0.75rem';
+      savedStatus.textContent = result.cached
+        ? 'আগে তৈরি করা সংরক্ষিত AI সমাধান দেখানো হয়েছে।'
+        : 'AI সমাধানটি স্বয়ংক্রিয়ভাবে সংরক্ষণ করা হয়েছে।';
+      solution.appendChild(savedStatus);
     }
   } catch (error) {
     const solution = document.getElementById('gemini-question-solution');

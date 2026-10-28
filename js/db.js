@@ -676,35 +676,7 @@ const initialDB = {
     }
   ],
 
-  notifications: [
-    {
-      id: 'notif_1',
-      userId: 'usr_ssc',
-      title: 'নতুন লাইভ ক্লাস আপলোড হয়েছে!',
-      message: 'পদার্থবিজ্ঞান অধ্যায় ২ এর লেকচার ভিডিও আপলোড করা হয়েছে। এখনই দেখে নাও!',
-      type: 'course',
-      isRead: false,
-      date: '১০ মিনিট আগে'
-    },
-    {
-      id: 'notif_2',
-      userId: 'all',
-      title: '🎉 অল বাংলাদেশ মেগা স্কলারশিপ এক্সাম',
-      message: 'আগামী শুক্রবার রাত ৮টায় অনুষ্ঠিত হতে যাচ্ছে জেনেসিওন একাডেমি স্কলারশিপ পরীক্ষা। অংশগ্রহণ করুন বিনামূল্যে!',
-      type: 'exam',
-      isRead: false,
-      date: '২ ঘণ্টা আগে'
-    },
-    {
-      id: 'notif_3',
-      userId: 'usr_job',
-      title: '৪৭তম বিসিএস প্রিলির লেকচার শিট আপডেট',
-      message: 'আন্তর্জাতিক বিষয়াবলীর নতুন সাম্প্রতিক তথ্যাবলীর শিট যুক্ত হয়েছে।',
-      type: 'resource',
-      isRead: true,
-      date: '১ দিন আগে'
-    }
-  ],
+  notifications: [],
 
 };
 
@@ -900,6 +872,17 @@ class Database {
   // Notifications
   getNotifications(userId) {
     return (this.data.notifications || []).filter(n => n.userId === 'all' || n.userId === userId);
+  }
+  setServerNotifications(notifications) {
+    this.data.notifications = notifications;
+    this.save();
+  }
+  markNotificationsRead(ids) {
+    const readIds = new Set(ids);
+    (this.data.notifications || []).forEach(notification => {
+      if (readIds.has(notification.id)) notification.isRead = true;
+    });
+    this.save();
   }
   markNotificationRead(id) {
     const n = (this.data.notifications || []).find(notif => notif.id === id);

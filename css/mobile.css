@@ -546,6 +546,11 @@
 }
 
 @media (max-width: 380px) {
+  .pwa-install-prompt {
+    flex-direction: column;
+    text-align: center;
+  }
+
   .container,
   .container-fluid {
     padding-left: 0.75rem;

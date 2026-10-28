@@ -1040,35 +1040,7 @@ const initialDB = {
     }
   ],
 
-  notifications: [
-    {
-      id: 'notif_1',
-      userId: 'usr_ssc',
-      title: 'নতুন লাইভ ক্লাস আপলোড হয়েছে!',
-      message: 'পদার্থবিজ্ঞান অধ্যায় ২ এর লেকচার ভিডিও আপলোড করা হয়েছে। এখনই দেখে নাও!',
-      type: 'course',
-      isRead: false,
-      date: '১০ মিনিট আগে'
-    },
-    {
-      id: 'notif_2',
-      userId: 'all',
-      title: '🎉 অল বাংলাদেশ মেগা স্কলারশিপ এক্সাম',
-      message: 'আগামী শুক্রবার রাত ৮টায় অনুষ্ঠিত হতে যাচ্ছে জেনেসিওন একাডেমি স্কলারশিপ পরীক্ষা। অংশগ্রহণ করুন বিনামূল্যে!',
-      type: 'exam',
-      isRead: false,
-      date: '২ ঘণ্টা আগে'
-    },
-    {
-      id: 'notif_3',
-      userId: 'usr_job',
-      title: '৪৭তম বিসিএস প্রিলির লেকচার শিট আপডেট',
-      message: 'আন্তর্জাতিক বিষয়াবলীর নতুন সাম্প্রতিক তথ্যাবলীর শিট যুক্ত হয়েছে।',
-      type: 'resource',
-      isRead: true,
-      date: '১ দিন আগে'
-    }
-  ],
+  notifications: [],
 
 };
 
@@ -1265,6 +1237,17 @@ class Database {
   getNotifications(userId) {
     return (this.data.notifications || []).filter(n => n.userId === 'all' || n.userId === userId);
   }
+  setServerNotifications(notifications) {
+    this.data.notifications = notifications;
+    this.save();
+  }
+  markNotificationsRead(ids) {
+    const readIds = new Set(ids);
+    (this.data.notifications || []).forEach(notification => {
+      if (readIds.has(notification.id)) notification.isRead = true;
+    });
+    this.save();
+  }
   markNotificationRead(id) {
     const n = (this.data.notifications || []).find(notif => notif.id === id);
     if (n) {
@@ -1319,7 +1302,11 @@ const Auth = window.Auth = {
     this.ready = request('/api/auth/me')
       .then(({ user }) => {
         this.currentUser = cacheUser(user);
-        return this.loadContent().then(() => this.currentUser);
+        if (this.currentUser) {
+          void this.loadContent();
+          void this.loadNotifications();
+        }
+        return this.currentUser;
       })
       .catch(error => {
         console.error('Authentication session check failed:', error);
@@ -1335,9 +1322,22 @@ const Auth = window.Auth = {
     try {
       const content = await request('/api/content');
       db.mergeServerContent(content);
+      window.dispatchEvent(new CustomEvent('contentChanged'));
     } catch (error) {
       console.error('Server content synchronization failed:', error);
       Toast.warning('সার্ভারের নতুন কোর্স ও পরীক্ষার তথ্য লোড করা যায়নি।');
+    }
+  },
+
+  async loadNotifications() {
+    if (!this.currentUser) return;
+    try {
+      const { notifications } = await request('/api/notifications');
+      db.setServerNotifications(notifications || []);
+    } catch (error) {
+      console.error('Notification synchronization failed:', error);
+      db.setServerNotifications([]);
+      Toast.warning('নোটিফিকেশন লোড করা যায়নি।');
     }
   },
 
@@ -1362,7 +1362,8 @@ const Auth = window.Auth = {
         body: JSON.stringify({ identifier: emailOrMobile.trim(), password })
       });
       this.currentUser = cacheUser(user);
-      await this.loadContent();
+      void this.loadContent();
+      void this.loadNotifications();
       this.saveSession();
       Toast.success(`স্বাগতম, ${user.name}!`);
       window.location.hash = user.role === 'ADMIN' ? '#/admin' : '#/dashboard';
@@ -1492,118 +1493,6 @@ Auth.init();
    ========================================================================== */
 
 
-const QUESTION_SEARCH_STOP_WORDS = new Set([
-  'a', 'an', 'and', 'are', 'by', 'for', 'from', 'how', 'in', 'is', 'of',
-  'on', 'or', 'the', 'to', 'what', 'when', 'where', 'which', 'who', 'why',
-  'একটি', 'এবং', 'কী', 'কি', 'কেন', 'কাকে', 'কোন', 'কোনটি', 'কিভাবে',
-  'কীভাবে', 'কীসের', 'কত', 'কে', 'এর', 'ও', 'জানতে', 'চাই', 'বল',
-  'বলো', 'দাও', 'দেখাও', 'আমাকে', 'আমার', 'হলো', 'হয়', 'হয়', 'হলে',
-  'সম্পর্কে', 'ব্যাখ্যা', 'সমাধান', 'প্রশ্ন', 'প্রশ্নটার', 'প্রশ্নটি',
-  'উত্তর', 'উত্তরটা'
-]);
-
-function questionSearchTokens(value) {
-  return [...new Set(
-    String(value || '')
-      .normalize('NFKC')
-      .toLocaleLowerCase()
-      .match(/[\p{L}\p{N}]+/gu) || []
-  )].filter(token =>
-    !QUESTION_SEARCH_STOP_WORDS.has(token) &&
-    (token.length > 1 || /^\d+$/.test(token))
-  );
-}
-
-function getQuestionSearchText(question) {
-  return [
-    question.text,
-    question.stimulus,
-    question.subject,
-    question.chapter,
-    question.topic,
-    question.board,
-    question.year,
-    question.options?.join(' '),
-    question.explanation,
-    question.answer,
-    question.parts?.map(part => `${part.question || ''} ${part.answer || ''}`).join(' ')
-  ].filter(Boolean).join(' ');
-}
-
-function findQuestionBankAnswers(prompt, category) {
-  const query = prompt.trim().normalize('NFKC').toLocaleLowerCase();
-  const tokens = questionSearchTokens(query);
-  if (!tokens.length) return [];
-
-  const matchesByQuestion = new Map();
-  db.getQuestions()
-    .filter(question => question.category === category)
-    .map(question => {
-      const searchableText = getQuestionSearchText(question);
-      const normalizedText = searchableText.normalize('NFKC').toLocaleLowerCase();
-      const normalizedQuestion = String(
-        question.text || question.stimulus ||
-        question.parts?.map(part => part.question).join(' ') || question.id
-      ).normalize('NFKC').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-      const matchedTokens = tokens.filter(token => normalizedText.includes(token));
-      const coverage = matchedTokens.length / tokens.length;
-      const exactMatch = normalizedText.includes(query);
-      return {
-        question,
-        normalizedQuestion,
-        score: exactMatch ? 1 : coverage,
-        matchedCount: matchedTokens.length,
-        queryTokenCount: tokens.length
-      };
-    })
-    .filter(match =>
-      match.score >= 0.65 &&
-      (match.queryTokenCount === 1
-        ? match.matchedCount === 1
-        : match.matchedCount >= 2)
-    )
-    .forEach(match => {
-      const existing = matchesByQuestion.get(match.normalizedQuestion);
-      if (!existing || match.score > existing.score) {
-        matchesByQuestion.set(match.normalizedQuestion, match);
-      }
-    });
-  const matches = [...matchesByQuestion.values()]
-    .sort((left, right) => right.score - left.score)
-    .slice(0, 3);
-
-  if (!matches.length || (
-    matches.length > 1 &&
-    matches[0].score - matches[1].score > 0.25
-  )) {
-    return matches.slice(0, 1).map(match => match.question);
-  }
-  return matches.map(match => match.question);
-}
-
-function formatQuestionBankAnswer(question, index) {
-  const type = question.questionType || 'MCQ';
-  const heading = question.subject
-    ? `${question.subject}${question.chapter ? ` • ${question.chapter}` : ''}`
-    : question.chapter || question.category;
-  const answer = type === 'CQ'
-    ? (question.parts || [])
-      .filter(part => part.answer)
-      .map(part => `- **${part.label || ''} ${part.question || ''}**\n  ${part.answer}`)
-      .join('\n') || 'প্রশ্নব্যাংকে এই CQ-এর নমুনা উত্তর যোগ করা হয়নি।'
-    : type === 'WRITTEN'
-      ? question.answer || question.explanation || 'প্রশ্নব্যাংকে এই প্রশ্নের উত্তর যোগ করা হয়নি।'
-      : `**সঠিক উত্তর:** ${question.options?.[question.correctIndex] || 'উত্তর পাওয়া যায়নি।'}${
-        Number.isInteger(question.correctIndex)
-          ? ` (${['ক', 'খ', 'গ', 'ঘ'][question.correctIndex] || question.correctIndex + 1})`
-          : ''
-      }\n\n**ব্যাখ্যা:** ${question.explanation || 'এই প্রশ্নের ব্যাখ্যা প্রশ্নব্যাংকে যোগ করা হয়নি।'}`;
-
-  const questionText = type === 'CQ'
-    ? question.stimulus || (question.parts || []).map(part => part.question).join(' ')
-    : question.text;
-  return `### ${index + 1}. ${heading || 'প্রশ্নব্যাংকের প্রশ্ন'}\n**প্রশ্ন:** ${questionText || ''}\n\n${answer}`;
-}
 const AiService = window.AiService = {
   getStudentContext() {
     const user = Auth.getUser();
@@ -1615,23 +1504,7 @@ const AiService = window.AiService = {
     };
   },
 
-  /**
-   * Answers from the question bank first, then uses Gemini for multilingual queries.
-   */
   async generateResponse(prompt, onChunk = null) {
-    const ctx = this.getStudentContext();
-    if (ctx.type !== 'GENERAL') {
-      await Auth.refreshContent();
-      const questionBankMatches = findQuestionBankAnswers(prompt, ctx.type);
-      if (questionBankMatches.length) {
-        const reply = `### 📚 প্রশ্নব্যাংক থেকে উত্তর\n\n${questionBankMatches
-        .map(formatQuestionBankAnswer)
-          .join('\n\n---\n\n')}\n\n*উত্তরটি তোমার বিভাগের প্রশ্নব্যাংকের সংরক্ষিত তথ্য থেকে নেওয়া হয়েছে।*`;
-        if (onChunk) onChunk(reply);
-        return reply;
-      }
-    }
-
     const response = await fetch('/api/ai/assistant', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3252,11 +3125,18 @@ function guardExamSession(session) {
   if (guardedSessionId === session.examId) return;
   clearExamGuards();
   guardedSessionId = session.examId;
+  let pendingVisibilityLoss = false;
 
   visibilityChangeHandler = () => {
     if (document.visibilityState === 'hidden') {
-      session.visibilityLossCount = (session.visibilityLossCount || 0) + 1;
+      pendingVisibilityLoss = true;
       session.scrollY = window.scrollY;
+      ExamService.saveCurrentSession();
+      return;
+    }
+    if (pendingVisibilityLoss) {
+      pendingVisibilityLoss = false;
+      session.visibilityLossCount = (session.visibilityLossCount || 0) + 1;
       ExamService.saveCurrentSession();
       if (session.visibilityLossCount > 2) {
         void submitExamAutomatically('তিনবারের বেশি অন্য ট্যাব/অ্যাপে যাওয়ায়');
@@ -4033,6 +3913,52 @@ function refreshQuestionCard(questionId) {
   currentCard.insertAdjacentHTML('beforebegin', markup);
   currentCard.remove();
 }
+
+function renderQuestionSubjects(group, prefixes) {
+  return group.subjects.length ? group.subjects.map(subjectGroup => `
+    <details class="qb-subject-group">
+      <summary>
+        <span>${escapeHtml(subjectGroup.subject)}</span>
+        <span class="qb-hierarchy-count">${subjectGroup.chapters.reduce((sum, chapter) => sum + chapter.questions.length, 0)}টি প্রশ্ন</span>
+      </summary>
+      ${subjectGroup.chapters.map(chapterGroup => `
+        <details class="qb-chapter-group">
+          <summary>
+            <span>${escapeHtml(chapterGroup.chapter)}</span>
+            <span class="qb-hierarchy-count">${chapterGroup.questions.length}টি প্রশ্ন</span>
+          </summary>
+          ${['MCQ', 'CQ', 'WRITTEN'].map(type => {
+            const typedQuestions = chapterGroup.questions.filter(question =>
+              (question.questionType || 'MCQ') === type
+            );
+            const typeLabel = type === 'WRITTEN' ? 'Written' : type;
+            return `
+              <details class="qb-type-group">
+                <summary>
+                  <span>${typeLabel}</span>
+                  <span class="qb-hierarchy-count">${typedQuestions.length}টি প্রশ্ন</span>
+                </summary>
+                <div class="qb-chapter-questions">
+                  ${typedQuestions.map((question, index) =>
+                    type === 'CQ'
+                      ? renderCQCard(question, index)
+                      : type === 'WRITTEN'
+                        ? renderWrittenCard(question, index)
+                        : renderQuestionCard(question, index, prefixes)
+                  ).join('')}
+                  ${typedQuestions.length ? '' : '<p class="text-muted qb-empty-type">এই ধরনের কোনো প্রশ্ন নেই।</p>'}
+                </div>
+              </details>
+            `;
+          }).join('')}
+        </details>
+      `).join('')}
+    </details>
+  `).join('') : `
+    <p class="text-muted qb-empty-category">এই ক্যাটাগরিতে এখনো কোনো প্রশ্ন নেই।</p>
+  `;
+}
+
 const QuestionBankView = window.QuestionBankView = {
   renderList() {
     const user = Auth.getUser();
@@ -4086,56 +4012,18 @@ const QuestionBankView = window.QuestionBankView = {
 
       <div class="container">
         <div class="qb-hierarchy">
-          ${questionHierarchy.map(group => `
-            <details class="qb-category-group">
-              <summary>
-                <span>${categoryLabels[group.category] || escapeHtml(group.category)}</span>
-                <span class="qb-hierarchy-count">${group.questions.length}টি প্রশ্ন</span>
-              </summary>
-              ${group.subjects.length ? group.subjects.map(subjectGroup => `
-                <details class="qb-subject-group">
-                  <summary>
-                    <span>${escapeHtml(subjectGroup.subject)}</span>
-                    <span class="qb-hierarchy-count">${subjectGroup.chapters.reduce((sum, chapter) => sum + chapter.questions.length, 0)}টি প্রশ্ন</span>
-                  </summary>
-                  ${subjectGroup.chapters.map(chapterGroup => `
-                    <details class="qb-chapter-group">
-                      <summary>
-                        <span>${escapeHtml(chapterGroup.chapter)}</span>
-                        <span class="qb-hierarchy-count">${chapterGroup.questions.length}টি প্রশ্ন</span>
-                      </summary>
-                      ${['MCQ', 'CQ', 'WRITTEN'].map(type => {
-                        const typedQuestions = chapterGroup.questions.filter(question =>
-                          (question.questionType || 'MCQ') === type
-                        );
-                        const typeLabel = type === 'WRITTEN' ? 'Written' : type;
-                        return `
-                          <details class="qb-type-group">
-                            <summary>
-                              <span>${typeLabel}</span>
-                              <span class="qb-hierarchy-count">${typedQuestions.length}টি প্রশ্ন</span>
-                            </summary>
-                            <div class="qb-chapter-questions">
-                              ${typedQuestions.map((question, index) =>
-                                type === 'CQ'
-                                  ? renderCQCard(question, index)
-                                  : type === 'WRITTEN'
-                                    ? renderWrittenCard(question, index)
-                                    : renderQuestionCard(question, index, prefixes)
-                              ).join('')}
-                              ${typedQuestions.length ? '' : '<p class="text-muted qb-empty-type">এই ধরনের কোনো প্রশ্ন নেই।</p>'}
-                            </div>
-                          </details>
-                        `;
-                      }).join('')}
-                    </details>
-                  `).join('')}
-                </details>
-              `).join('') : `
-                <p class="text-muted qb-empty-category">এই ক্যাটাগরিতে এখনো কোনো প্রশ্ন নেই।</p>
-              `}
-            </details>
-          `).join('')}
+          ${questionHierarchy.map(group => user && !Auth.isAdmin()
+            ? renderQuestionSubjects(group, prefixes)
+            : `
+              <details class="qb-category-group">
+                <summary>
+                  <span>${categoryLabels[group.category] || escapeHtml(group.category)}</span>
+                  <span class="qb-hierarchy-count">${group.questions.length}টি প্রশ্ন</span>
+                </summary>
+                ${renderQuestionSubjects(group, prefixes)}
+              </details>
+            `
+          ).join('')}
         </div>
       </div>
     `;
@@ -4266,16 +4154,33 @@ window.toggleQBExplanation = (qid) => {
 };
 
 window.askAiAboutQuestion = async (qid) => {
-  if (!db.getQuestionById(qid)) return;
+  const question = db.getQuestionById(qid);
+  if (!question) return;
   Modal.open({
     title: 'Gemini AI সমাধান',
-    content: '<div id="gemini-question-solution" role="status">Gemini AI থেকে সমাধান তৈরি হচ্ছে...</div>'
+    content: '<div id="gemini-question-solution" role="status">সংরক্ষিত সমাধান খোঁজা হচ্ছে...</div>'
   });
   try {
     const response = await fetch('/api/ai/question-solution', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ questionId: qid })
+      body: JSON.stringify({
+        questionId: qid,
+        question: {
+          id: question.id,
+          category: question.category,
+          subject: question.subject,
+          chapter: question.chapter,
+          questionType: question.questionType,
+          text: question.text,
+          stimulus: question.stimulus,
+          parts: question.parts,
+          options: question.options,
+          correctIndex: question.correctIndex,
+          explanation: question.explanation,
+          answer: question.answer
+        }
+      })
     });
     const result = await response.json();
     if (!response.ok) {
@@ -4286,6 +4191,14 @@ window.askAiAboutQuestion = async (qid) => {
       solution.textContent = result.solution;
       solution.style.whiteSpace = 'pre-wrap';
       solution.style.lineHeight = '1.8';
+      const savedStatus = document.createElement('small');
+      savedStatus.className = 'text-muted';
+      savedStatus.style.display = 'block';
+      savedStatus.style.marginTop = '0.75rem';
+      savedStatus.textContent = result.cached
+        ? 'আগে তৈরি করা সংরক্ষিত AI সমাধান দেখানো হয়েছে।'
+        : 'AI সমাধানটি স্বয়ংক্রিয়ভাবে সংরক্ষণ করা হয়েছে।';
+      solution.appendChild(savedStatus);
     }
   } catch (error) {
     const solution = document.getElementById('gemini-question-solution');
@@ -4389,9 +4302,9 @@ const AiView = window.AiView = {
         sender: 'ai',
         text: `👋 **স্বাগতম!** আমি তোমার **জেনেসিওন একাডেমি এআই স্টাডি অ্যাসিস্ট্যান্ট**।
 
-বর্তমানে আমি তোমার **${ctx.label}** সিলেবাস অনুযায়ী যেকোনো প্রশ্নের সমাধান, কঠিন টপিকের সহজ ব্যাখ্যা, পড়ার রুটিন কিংবা কুইজ তৈরিতে সাহায্য করতে প্রস্তুত।
+আমি শুধু তোমার বিভাগের Question Bank-এ থাকা প্রশ্নের উত্তর ও ব্যাখ্যা দিতে পারি।
 
-নিচের যেকোনো কুইক অপশন বেছে নাও অথবা সরাসরি তোমার প্রশ্নটি লিখে পাঠাও!`
+প্রশ্নটি Question Bank-এ না থাকলে জানিয়ে দেব যে প্রশ্নটি পাওয়া যায়নি।`
       });
     }
 
@@ -4437,16 +4350,12 @@ const AiView = window.AiView = {
 
         <!-- Quick Action Pills -->
         <div class="ai-quick-pills">
-          <button class="quick-pill" onclick="window.sendAiMessage('নিউটনের ৩য় গতিসূত্র বাস্তব উদাহরণসহ বাংলায় বুঝিয়ে দাও')">💡 বিষয় বুঝিয়ে দাও</button>
-          <button class="quick-pill" onclick="window.sendAiMessage('একটি গাড়ি ২ m/s² সুষম ত্বরণে ১০ সেকেন্ডে কত দূরত্ব যাবে সমাধান করো')">🔍 অঙ্ক সমাধান</button>
-          <button class="quick-pill" onclick="window.sendAiMessage('আমার জন্য গুরুত্বপূর্ণ ৫টি স্পেশাল প্র্যাকটিস MCQ দাও')">🎯 স্পেশাল MCQ</button>
-          <button class="quick-pill" onclick="window.sendAiMessage('আমার পরীক্ষার জন্য ৭ দিনের একটি কার্যকরী পড়ার রুটিন দাও')">📅 পড়ার রুটিন</button>
-          <button class="quick-pill" onclick="window.sendAiMessage('বাংলাদেশের সংবিধানের গুরুত্বপূর্ণ অনুচ্ছেদগুলো বুঝিয়ে দাও')">🏛️ সংবিধান অনুচ্ছেদ</button>
+          <p class="text-muted">শুধু তোমার বিভাগের Question Bank-এ থাকা প্রশ্নের উত্তর দেওয়া হবে। প্রশ্ন বা বিষয় লিখে খুঁজে দেখো।</p>
         </div>
 
         <!-- Chat Input Form -->
         <form class="ai-input-form" onsubmit="window.handleAiSubmit(event)">
-          <input type="text" id="ai-user-input" class="ai-input-field" placeholder="বাংলা, English বা Banglish-এ পড়াশোনার প্রশ্ন লিখুন..." autocomplete="off">
+          <input type="text" id="ai-user-input" class="ai-input-field" placeholder="Question Bank-এর প্রশ্নটি লিখুন..." autocomplete="off">
           <button type="submit" class="btn btn-primary" style="border-radius: var(--radius-lg); padding: 0.6rem 1.25rem;">
             ${icons.send}
           </button>
@@ -5010,11 +4919,24 @@ const DashboardView = window.DashboardView = {
     const exams = db.getExams().filter(e => e.category === category);
     const attempts = db.getExamAttempts(user.id);
 
-    // Calculate greeting based on current hour
-    const hour = new Date().getHours();
-    let greeting = i18n.t('goodMorning');
-    if (hour >= 12 && hour < 17) greeting = i18n.t('goodAfternoon');
-    else if (hour >= 17) greeting = i18n.t('goodEvening');
+    // Use Bangladesh time even when the device timezone differs.
+    const timeParts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Dhaka',
+      hour: 'numeric',
+      minute: 'numeric',
+      hourCycle: 'h23'
+    }).formatToParts(new Date());
+    const localTime = Object.fromEntries(timeParts.map(part => [part.type, part.value]));
+    const minutes = Number(localTime.hour) * 60 + Number(localTime.minute);
+    const greeting = minutes >= 19 * 60 + 30 || minutes < 4 * 60
+      ? 'শুভ রাত্রি'
+      : minutes >= 17 * 60
+        ? 'শুভ সন্ধ্যা'
+        : minutes >= 14 * 60
+          ? 'শুভ বিকাল'
+          : minutes >= 12 * 60
+            ? 'শুভ দুপুর'
+            : 'শুভ সকাল';
 
     // Dynamic tasks list based on user category
     let defaultTasks = [
@@ -5373,7 +5295,8 @@ const ProfileView = window.ProfileView = {
 };
 const NotificationsView = window.NotificationsView = {
   render() {
-    const user = Auth.getUser() || db.getUserById('usr_ssc');
+    const user = Auth.getUser();
+    if (!user) return '';
     const notifs = db.getNotifications(user.id);
 
     return `
@@ -5394,14 +5317,14 @@ const NotificationsView = window.NotificationsView = {
             ${notifs.map(n => `
               <div class="card" style="padding: 1.25rem; display: flex; align-items: flex-start; gap: 1rem; border-left: 4px solid ${n.isRead ? 'var(--border-color)' : 'var(--primary)'}; background: ${n.isRead ? 'var(--bg-surface)' : 'var(--primary-light)'};">
                 <div style="width: 36px; height: 36px; border-radius: 50%; background: var(--bg-surface); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-                  ${n.type === 'course' ? icons.video : n.type === 'exam' ? icons.award : icons.bell}
+                  ${n.type === 'course' ? icons.video : n.type === 'exam' ? icons.award : n.type === 'book' ? icons.book : icons.bell}
                 </div>
                 <div style="flex: 1;">
                   <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem;">
-                    <h4 style="font-size: 1rem;">${n.title}</h4>
-                    <span class="text-muted" style="font-size: 0.75rem;">${n.date}</span>
+                    <h4 style="font-size: 1rem;">${escapeHtml(n.title)}</h4>
+                    <span class="text-muted" style="font-size: 0.75rem;">${escapeHtml(n.date)}</span>
                   </div>
-                  <p style="color: var(--text-muted); font-size: 0.9rem;">${n.message}</p>
+                  <p style="color: var(--text-muted); font-size: 0.9rem;">${escapeHtml(n.message)}</p>
                 </div>
               </div>
             `).join('')}
@@ -5409,6 +5332,33 @@ const NotificationsView = window.NotificationsView = {
         `}
       </div>
     `;
+  },
+
+  async markSeen() {
+    const user = Auth.getUser();
+    if (!user) return;
+    const ids = db.getNotifications(user.id).filter(notification => !notification.isRead)
+      .map(notification => notification.id);
+    if (!ids.length) return;
+    try {
+      const response = await fetch('/api/notifications/seen', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'নোটিফিকেশন দেখা হয়েছে চিহ্নিত করা যায়নি।');
+      db.markNotificationsRead(ids);
+      window.dispatchEvent(new CustomEvent('notificationsChanged'));
+      const content = document.getElementById('main-content');
+      if (content && window.location.hash === '#/notifications') {
+        content.innerHTML = NotificationsView.render();
+      }
+    } catch (error) {
+      console.error('Marking notifications as seen failed:', error);
+      Toast.error(error.message || 'নোটিফিকেশন দেখা হয়েছে চিহ্নিত করা যায়নি।');
+    }
   }
 };
 
@@ -5451,13 +5401,10 @@ window.submitAdminMode = async (event) => {
   await Auth.switchAdminMode({ role: 'ADMIN', password });
 };
 
-window.markAllNotifsRead = () => {
+window.markAllNotifsRead = async () => {
   const user = Auth.getUser();
   if (user) {
-    db.getNotifications(user.id).forEach(n => db.markNotificationRead(n.id));
-    Toast.success('সকল নোটিফিকেশন পড়া হয়েছে চিহ্নিত করা হয়েছে');
-    const content = document.getElementById('main-content');
-    if (content) content.innerHTML = NotificationsView.render();
+    await NotificationsView.markSeen();
   }
 };
 
@@ -5487,6 +5434,254 @@ function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, char => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   })[char]);
+}
+
+let localPdfOcrLibraries;
+let lastLocalPdfOcrText = '';
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = true;
+    script.onload = resolve;
+    script.onerror = () => reject(new Error('Local OCR library লোড করা যায়নি। ইন্টারনেট সংযোগ পরীক্ষা করে আবার চেষ্টা করুন।'));
+    document.head.appendChild(script);
+  });
+}
+
+function loadLocalPdfOcrLibraries() {
+  if (!localPdfOcrLibraries) {
+    localPdfOcrLibraries = Promise.all([
+      import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs'),
+      loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js')
+    ]).then(([pdfjs]) => {
+      pdfjs.GlobalWorkerOptions.workerSrc =
+        'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
+      if (!window.Tesseract?.createWorker) throw new Error('Local OCR engine পাওয়া যায়নি।');
+      return { pdfjs, tesseract: window.Tesseract };
+    }).catch(error => {
+      localPdfOcrLibraries = null;
+      throw error;
+    });
+  }
+  return localPdfOcrLibraries;
+}
+
+function parseLocalOcrQuestions(ocrText) {
+  const normalizeExtractedText = value => {
+    const characters = [];
+    for (const character of value.replace(/\0/g, '')) {
+      const combining = /\p{M}/u.test(character);
+      if (combining && characters.at(-1) === character) continue;
+      characters.push(character);
+    }
+    return characters.join('').normalize('NFC');
+  };
+  const questionStart = /^\s*(?:(?:প্রশ্ন|question|q)\s*(?:নং|no\.?)?\s*)?([0-9০-৯]{1,3})\s*[.)।:ঃ]\s*(.*)$/i;
+  const optionStart = /^\s*(?:\(([A-Da-dকখগঘ])\)|([A-Da-dকখগঘ])\s*[).।:])\s*(.*)$/;
+  const answerLine = /^\s*(?:answer|উত্তর)\s*[:：ঃ-]\s*\(?([A-Da-dকখগঘ])\)?(?:\s*[).।:]\s*.*)?\s*$/i;
+  const explanationMarker = /(?:উত্তরের\s*)?(?:ব্যাখ্যা(?:\s*ও\s*বিশ্লেষণ)?|বাখা|ব্যা+খ্যা+|explanation|reasoning|reason|solution|সমাধান|উত্তরের\s*কারণ)\s*[:：ঃ-]\s*/i;
+  const answerWithDetails = /(?:(?:correct|সঠিক)\s+)?(?:answer|উত্তর)\s*[:：ঃ-]\s*\(?([A-Da-dকখগঘ])\)?([^\r\n]*)/gi;
+  const answerKeyHeader = /^\s*(?:answer\s*key|correct\s*answers?|উত্তর\s*(?:মালা|সূচি|কী|সমূহ))\s*[:：ঃ-]?\s*(.*)$/i;
+  const answerKeyEntry = /([0-9০-৯]{1,3})\s*[.)।:ঃ-]\s*\(?([A-Da-dকখগঘ])\)?/g;
+  const optionIndex = { A: 0, B: 1, C: 2, D: 3, 'ক': 0, 'খ': 1, 'গ': 2, 'ঘ': 3 };
+  const bengaliDigits = '০১২৩৪৫৬৭৮৯';
+  const toAsciiDigits = value => value.replace(/[০-৯]/g, digit => String(bengaliDigits.indexOf(digit)));
+  const explanationEnd = /(?:[(（]?\s*(?:quick\s+revision|কুইক\s+রিভিশন)|একাদশ\s+ICT\s*[_—–-]|(?:ক্ষ\s*)?(?:📌\s*)?অধ্যা[^\s\-–—_]{0,3}\s*[-–—_ ]?\s*[0-9০-৯]+\s*এর\s*গুরুত্বপূর্ণ|পৃষ্ঠা\s*[0-9০-৯]+\s*(?:এর|of)\s*[0-9০-৯]+|page\s+\d+\s*(?:of|\/)\s*\d+)/i;
+  const answerOptionSuffix = /\s*(?:correct\s+answer|সঠিক\s+উত্তর|উত্তর)\s*[:：ঃ-].*$/i;
+
+  let text = normalizeExtractedText(ocrText);
+  const rawLines = text.split(/\r?\n/);
+  const answerHeaderIndex = rawLines.findIndex(line => answerKeyHeader.test(line));
+  const answerKey = new Map();
+  if (answerHeaderIndex >= 0) {
+    const headerMatch = rawLines[answerHeaderIndex].match(answerKeyHeader);
+    const answerText = [headerMatch?.[1] || '', ...rawLines.slice(answerHeaderIndex + 1)].join('\n');
+    const answerMatches = [...answerText.matchAll(answerKeyEntry)];
+    answerMatches.forEach((match, index) => {
+      const end = match.index + match[0].length;
+      const nextStart = answerMatches[index + 1]?.index ?? answerText.length;
+      const explanation = answerText.slice(end, nextStart)
+        .split(/\r?\n/, 1)[0]
+        .replace(/^[\s:：ঃ|—–-]+/, '')
+        .trim();
+      answerKey.set(toAsciiDigits(match[1]), {
+        correctIndex: optionIndex[match[2].toUpperCase()],
+        explanation,
+      });
+    });
+    text = rawLines.slice(0, answerHeaderIndex).join('\n');
+  }
+  text = text.replace(answerWithDetails, (_match, answer, tail) => {
+    const explanation = tail.match(explanationMarker);
+    return explanation
+      ? `\nAnswer: ${answer}\nExplanation: ${tail.slice(explanation.index + explanation[0].length).trim()}\n`
+      : `\nAnswer: ${answer}\n`;
+  });
+  text = text
+    .replace(/[ \t]*\|[ \t]*(?=(?:ব্যাখ্যা|বাখা|ব্যা+খ্যা+|explanation|solution|সমাধান)\s*[:：ঃ-])/gi, '\n')
+    .replace(explanationMarker, '\nExplanation: ')
+    .replace(/(?<!^)\s+(?=(?:\([A-Da-dকখগঘ]\)|[A-Da-dকখগঘ]\s*[).।:])\s*\S)/g, '\n')
+    .replace(/(?<!^)\s+(?=(?:(?:প্রশ্ন|question|q)\s*)?[0-9০-৯]{1,3}\s*[.)।:]\s*\S)/gi, '\n');
+
+  const questions = [];
+  let current = null;
+  let currentOption = null;
+  const finish = () => {
+    if (current && current.text.trim() && current.options.some(option => option.trim())) {
+      const end = current.explanation.match(explanationEnd);
+      if (end) current.explanation = current.explanation.slice(0, end.index);
+      current.options = current.options.map(option => {
+        const suffix = option.match(answerOptionSuffix);
+        return (suffix ? option.slice(0, suffix.index) : option).replace(/\s*\|\s*$/, '').trim();
+      });
+      current.text = current.text.trim();
+      current.explanation = current.explanation.trim().replace(/^[ \t|—-]+|[ \t|—-]+$/g, '');
+      delete current.readingExplanation;
+      questions.push(current);
+    }
+    current = null;
+    currentOption = null;
+  };
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.replace(/\s+/g, ' ').trim();
+    if (!line) continue;
+    const questionMatch = line.match(questionStart);
+    const optionMatch = line.match(optionStart);
+    const answerMatch = line.match(answerLine);
+    const explanationMatch = line.match(/^\s*(?:উত্তরের\s*)?(?:ব্যাখ্যা(?:\s*ও\s*বিশ্লেষণ)?|বাখা|ব্যা+খ্যা+|explanation|reasoning|reason|solution|সমাধান|উত্তরের\s*কারণ)\s*[:：ঃ-]\s*(.*)$/i);
+    if (questionMatch) {
+      finish();
+      current = {
+        number: Number(toAsciiDigits(questionMatch[1])),
+        text: questionMatch[2].trim(),
+        options: ['', '', '', ''],
+        correctIndex: null,
+        explanation: '',
+        readingExplanation: false,
+      };
+      continue;
+    }
+    if (current && optionMatch) {
+      currentOption = optionIndex[(optionMatch[1] || optionMatch[2]).toUpperCase()];
+      if (currentOption !== undefined) {
+        current.options[currentOption] = optionMatch[3].trim();
+        current.readingExplanation = false;
+      }
+      continue;
+    }
+    if (current && answerMatch) {
+      current.correctIndex = optionIndex[answerMatch[1].toUpperCase()];
+      current.readingExplanation = false;
+      continue;
+    }
+    if (current && explanationMatch) {
+      current.explanation = explanationMatch[1].trim();
+      current.readingExplanation = true;
+      continue;
+    }
+    if (current && current.readingExplanation) {
+      current.explanation = `${current.explanation} ${line}`.trim();
+    } else if (current && currentOption !== null) {
+      current.options[currentOption] += ` ${line}`;
+    } else if (current) {
+      current.text = `${current.text} ${line}`.trim();
+    }
+  }
+  finish();
+  for (const question of questions) {
+    const answer = answerKey.get(String(question.number));
+    if (answer) {
+      question.correctIndex = answer.correctIndex;
+      if (!question.explanation && answer.explanation) question.explanation = answer.explanation;
+    }
+    delete question.number;
+  }
+  return questions;
+}
+
+async function extractQuestionsLocallyFromPdf(file, onProgress) {
+  lastLocalPdfOcrText = '';
+  onProgress('Local OCR engine load হচ্ছে...');
+  const { pdfjs, tesseract } = await loadLocalPdfOcrLibraries();
+  const pdf = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
+  if (pdf.numPages > 60) {
+    await pdf.destroy();
+    throw new Error('Local OCR-এ সর্বোচ্চ ৬০ পৃষ্ঠার PDF নেওয়া যাবে। PDF ছোট করে আবার চেষ্টা করুন।');
+  }
+  let worker;
+  let currentPageNumber = 0;
+  const textPages = [];
+  try {
+    worker = await tesseract.createWorker('ben+eng', 1, {
+      langPath: 'https://tessdata.projectnaptha.com/4.0.0',
+      logger: progress => {
+        if (progress.status === 'recognizing text') {
+          onProgress(`Local OCR চলছে—পৃষ্ঠা ${currentPageNumber}/${pdf.numPages}`);
+        }
+      }
+    });
+    await worker.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1' });
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+      currentPageNumber = pageNumber;
+      onProgress(`Local OCR চলছে—পৃষ্ঠা ${pageNumber}/${pdf.numPages}`);
+      const page = await pdf.getPage(pageNumber);
+      const textContent = await page.getTextContent();
+      const textItems = textContent.items
+        .filter(item => typeof item.str === 'string' && item.str.trim())
+        .map(item => item.str);
+      let nativeText = '';
+      if (textItems.join(' ').replace(/\s/g, '').length >= 40) {
+        const textLines = [];
+        let currentLine = [];
+        let currentY;
+        const flushLine = () => {
+          if (currentLine.length) textLines.push(currentLine.join(' ').trim());
+          currentLine = [];
+          currentY = undefined;
+        };
+        textContent.items.forEach(item => {
+          if (typeof item.str !== 'string' || !item.str.trim()) return;
+          const y = Array.isArray(item.transform) ? item.transform[5] : undefined;
+          if (currentLine.length && Number.isFinite(y) && Number.isFinite(currentY) && Math.abs(y - currentY) > 3) {
+            flushLine();
+          }
+          currentLine.push(item.str);
+          if (Number.isFinite(y)) currentY = y;
+          if (item.hasEOL) flushLine();
+        });
+        flushLine();
+        nativeText = textLines.join('\n');
+        const nativeQuestions = parseLocalOcrQuestions(nativeText);
+        if (nativeQuestions.length && nativeQuestions.every(question => question.options.every(Boolean))) {
+          textPages.push(nativeText);
+          page.cleanup();
+          continue;
+        }
+      }
+      const viewport = page.getViewport({ scale: 2.5 });
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      const context = canvas.getContext('2d');
+      if (!context) throw new Error('PDF page render করা যায়নি।');
+      await page.render({ canvasContext: context, viewport }).promise;
+      const { data } = await worker.recognize(canvas);
+      const ocrQuestions = parseLocalOcrQuestions(data.text);
+      const nativeQuestionCount = parseLocalOcrQuestions(nativeText).length;
+      textPages.push(ocrQuestions.length || !nativeQuestionCount ? data.text : nativeText);
+      canvas.width = 0;
+      canvas.height = 0;
+      page.cleanup();
+    }
+  } finally {
+    if (worker) await worker.terminate();
+    await pdf.destroy();
+  }
+  lastLocalPdfOcrText = textPages.join('\n').trim();
+  return parseLocalOcrQuestions(lastLocalPdfOcrText);
 }
 
 function getAdminQuestionPath(root, trigger) {
@@ -5842,9 +6037,11 @@ const AdminView = window.AdminView = {
     if (!response.ok) throw new Error(upload.error || 'ফাইল আপলোড শুরু করা যায়নি।');
 
     const storageResponse = await fetch(upload.upload.signedUrl, {
-      method: 'POST',
+      method: 'PUT',
       headers: {
         'Content-Type': upload.asset.contentType,
+        'apikey': upload.upload.apiKey,
+        'Authorization': `Bearer ${upload.upload.apiKey}`,
         'x-upsert': 'false'
       },
       body: file
@@ -7421,7 +7618,7 @@ window.openPdfQuestionImportModal = () => {
           <label class="form-label">প্রশ্নপত্র PDF (সর্বোচ্চ ১০০ MB)</label>
           <input id="pdf-q-file" type="file" class="form-input" accept="application/pdf,.pdf" required>
         </div>
-        <p class="text-muted">Gemini key configured থাকলে PDF-এর প্রতিটি পৃষ্ঠার ছবি Google Gemini-তে OCR-এর জন্য পাঠানো হবে। Key না থাকলে সার্চযোগ্য লেখা বা স্থানীয় Tesseract OCR ব্যবহার হবে। OCR ভুল করতে পারে—প্রকাশের আগে মূল PDF-এর সঙ্গে মিলিয়ে নিন।</p>
+        <p class="text-muted">প্রথমে Gemini PDF থেকে প্রশ্ন বের করবে। Gemini timeout বা ব্যর্থ হলে PDF আপনার browser-এ local OCR করা হবে—ফাইলটি কোনো OCR service-এ পাঠানো হবে না। OCR ভুল করতে পারে; প্রকাশের আগে মূল PDF-এর সঙ্গে মিলিয়ে নিন।</p>
         <button type="submit" class="btn btn-primary btn-block" style="margin-top: 1rem;">PDF আপলোড ও প্রশ্ন শনাক্ত</button>
       </form>
     `
@@ -7449,19 +7646,44 @@ window.uploadQuestionsPdf = async (event) => {
   const originalButtonText = submitButton?.textContent;
   if (submitButton) {
     submitButton.disabled = true;
-    submitButton.textContent = 'PDF OCR চলছে—কয়েক মিনিট অপেক্ষা করুন';
+    submitButton.textContent = 'Gemini PDF বিশ্লেষণ করছে—অপেক্ষা করুন';
   }
   try {
     const result = await AdminView.uploadFile(file, category, 'questions-pdf');
-    if (!result.questions.length) {
-      Toast.warning(result.message || 'PDF থেকে সম্পূর্ণ MCQ পাওয়া যায়নি।');
+    let questions = result.questions || [];
+    let usedLocalOcr = Boolean(result.usedLocalOcr);
+    if (result.needsLocalOcr) {
+      questions = await extractQuestionsLocallyFromPdf(file, progress => {
+        if (submitButton) submitButton.textContent = progress;
+      });
+      usedLocalOcr = true;
+    }
+    if (!questions.length) {
+      if (usedLocalOcr && lastLocalPdfOcrText) {
+        Modal.open({
+          title: 'PDF থেকে প্রশ্ন শনাক্ত হয়নি',
+          maxWidth: '850px',
+          content: `
+            <p class="text-muted" style="margin-bottom:1rem;">
+              ${result.fallbackReason ? `Gemini সমস্যা: ${escapeHtml(result.fallbackReason)}. ` : ''}
+              OCR নিচের লেখা পড়েছে, কিন্তু প্রশ্ন/অপশনের গঠন চিনতে পারেনি। PDF-এ প্রশ্ন ও চারটি অপশন পরিষ্কার আছে কি না যাচাই করুন।
+            </p>
+            <textarea class="form-textarea" rows="16" readonly>${escapeHtml(lastLocalPdfOcrText.slice(0, 12000))}</textarea>
+            <p class="text-muted">১২,০০০ অক্ষরের বেশি হলে পরের অংশ দেখানো হয়নি। এই লেখা দেখে বোঝা যাবে OCR কী পড়েছে।</p>
+          `
+        });
+      } else {
+        Toast.warning(usedLocalOcr
+          ? `Local OCR কোনো পাঠযোগ্য লেখা পায়নি। PDF স্ক্যান/পাসওয়ার্ড-সুরক্ষিত কি না এবং পৃষ্ঠাগুলো পরিষ্কার কি না যাচাই করুন।${result.fallbackReason ? ` Gemini সমস্যা: ${result.fallbackReason}` : ''}`
+          : result.message || 'PDF থেকে সম্পূর্ণ MCQ পাওয়া যায়নি।');
+      }
       if (submitButton) {
         submitButton.disabled = false;
         submitButton.textContent = originalButtonText;
       }
       return;
     }
-    pdfQuestionDrafts = result.questions.map(question => ({
+    pdfQuestionDrafts = questions.map(question => ({
       ...question,
       id: uid('q'),
       category,
@@ -7483,8 +7705,9 @@ window.uploadQuestionsPdf = async (event) => {
       maxWidth: '850px',
       content: `
         <p class="text-muted" style="margin-bottom:1rem;">
-        ${result.usedOcr ? 'OCR দিয়ে PDF-এর লেখা শনাক্ত হয়েছে।' : 'PDF-এর লেখা থেকে প্রশ্ন শনাক্ত হয়েছে।'}
-        ${result.usedOcr && explanationCount === 0 ? 'কোনো ব্যাখ্যা পাওয়া যায়নি—মূল PDF-এ ব্যাখ্যা থাকলে প্রতিটি পৃষ্ঠা ও বিন্যাস যাচাই করুন।' : `${explanationCount}টি প্রশ্নে ব্যাখ্যা পাওয়া গেছে।`}
+        ${usedLocalOcr ? 'Gemini পাওয়া না যাওয়ায় browser-এর local OCR দিয়ে PDF পড়া হয়েছে।' : 'Gemini দিয়ে PDF-এর লেখা থেকে প্রশ্ন শনাক্ত হয়েছে।'}
+        ${usedLocalOcr && result.fallbackReason ? ` Gemini সমস্যা: ${escapeHtml(result.fallbackReason)}.` : ''}
+        ${usedLocalOcr ? ' Local OCR-এ উত্তর/ব্যাখ্যা সঠিকভাবে শনাক্ত নাও হতে পারে—প্রতিটি প্রশ্ন যাচাই করুন।' : `${explanationCount}টি প্রশ্নে ব্যাখ্যা পাওয়া গেছে।`}
         OCR ভুল পড়তে পারে—মূল PDF-এর সঙ্গে প্রতিটি প্রশ্ন, অপশন, উত্তর ও ব্যাখ্যা মিলিয়ে তারপর প্রকাশ করুন।
         </p>
         ${pdfQuestionDrafts.map((question, index) => `
@@ -8015,11 +8238,16 @@ class App {
     this.headerEl = document.getElementById('main-header');
     this.contentEl = document.getElementById('main-content');
     this.branding = { siteName: 'Geneseon Academy', logoUrl: null };
-    
+    this.deferredInstallPrompt = null;
+    this.installPopupShown = false;
+    this.isPwaInstalled = window.matchMedia('(display-mode: standalone)').matches ||
+      window.navigator.standalone === true;
+
     this.init();
   }
 
   async init() {
+    this.setupAppInstallation();
     window.addEventListener('hashchange', () => this.handleRoute());
     window.addEventListener('authChanged', () => {
       this.renderHeader();
@@ -8032,15 +8260,99 @@ class App {
     window.addEventListener('cartUpdated', () => {
       this.renderHeader();
     });
+    window.addEventListener('notificationsChanged', () => {
+      this.renderHeader();
+    });
+    window.addEventListener('contentChanged', () => {
+      void this.handleRoute();
+    });
 
-    await Auth.ready;
-    const activeExam = await ExamService.restoreCurrentSession();
+    const brandingPromise = this.loadBranding();
+    const [, activeExam] = await Promise.all([
+      Auth.ready,
+      ExamService.restoreCurrentSession()
+    ]);
     if (activeExam && !Auth.isAdmin()) {
       window.location.hash = `#/exam/${encodeURIComponent(activeExam.examId)}`;
     }
-    await this.loadBranding();
+    void brandingPromise;
     this.renderHeader();
     this.handleRoute();
+  }
+
+  setupAppInstallation() {
+    window.addEventListener('beforeinstallprompt', (event) => {
+      event.preventDefault();
+      this.deferredInstallPrompt = event;
+      this.renderHeader();
+    });
+    window.addEventListener('appinstalled', () => {
+      this.deferredInstallPrompt = null;
+      this.isPwaInstalled = true;
+      this.renderHeader();
+    });
+    document.addEventListener('click', (event) => {
+      const installButton = event.target.closest('.pwa-install-action');
+      if (!installButton) return;
+      Modal.close();
+      if (!this.deferredInstallPrompt) {
+        this.showAppInstallationInstructions();
+        return;
+      }
+
+      const installPrompt = this.deferredInstallPrompt;
+      this.deferredInstallPrompt = null;
+      void installPrompt.prompt().then(() => installPrompt.userChoice).then((choice) => {
+        if (choice.outcome === 'accepted') this.isPwaInstalled = true;
+        this.renderHeader();
+      }).catch((error) => {
+        console.error('App installation prompt failed:', error);
+        this.renderHeader();
+      });
+    });
+  }
+
+  maybeShowInstallPopup(path) {
+    if (
+      this.installPopupShown ||
+      this.isPwaInstalled ||
+      !['#/', ''].includes(path) ||
+      document.getElementById('current-modal-backdrop')
+    ) return;
+    this.installPopupShown = true;
+    window.setTimeout(() => {
+      if (this.isPwaInstalled || !['#/', ''].includes(window.location.hash || '#/')) return;
+      const language = i18n.getLang();
+      Modal.open({
+        title: language === 'bn' ? 'Geneseon Academy অ্যাপ ইনস্টল করুন' : 'Install the Geneseon Academy app',
+        content: `<div class="pwa-install-prompt">
+          <img src="/images/pwa-icon-192.png" alt="" width="72" height="72">
+          <p>${language === 'bn'
+            ? 'এক ট্যাপেই কোর্স, পরীক্ষা ও প্রশ্নব্যাংক ব্যবহার করতে অ্যাপটি আপনার ডিভাইসে ইনস্টল করুন।'
+            : 'Install the app on your device for one-tap access to courses, exams, and the question bank.'}</p>
+        </div>`,
+        footer: `<button class="btn btn-secondary" type="button" onclick="window.Modal.close()">${language === 'bn' ? 'এখন নয়' : 'Not now'}</button>
+          <button class="btn btn-primary pwa-install-action" type="button">${language === 'bn' ? 'ইনস্টল করুন' : 'Install app'}</button>`,
+        maxWidth: '440px'
+      });
+    }, 500);
+  }
+
+  showAppInstallationInstructions() {
+    const language = i18n.getLang();
+    const isIos = /iphone|ipad|ipod/i.test(window.navigator.userAgent);
+    const title = language === 'bn' ? 'অ্যাপ ইনস্টল করুন' : 'Install the app';
+    const instructions = isIos
+      ? language === 'bn'
+        ? 'Safari-তে Share বাটনে চাপুন, তারপর “Add to Home Screen” নির্বাচন করুন।'
+        : 'In Safari, tap Share, then choose “Add to Home Screen”.'
+      : language === 'bn'
+        ? 'ব্রাউজারের মেনু খুলে “Install app” অথবা “Add to Home screen” নির্বাচন করুন।'
+        : 'Open your browser menu and choose “Install app” or “Add to Home screen”.';
+    Modal.open({
+      title,
+      content: `<p>${instructions}</p>`
+    });
   }
 
   async loadBranding() {
@@ -8279,6 +8591,7 @@ class App {
         this.contentEl.innerHTML = ProfileView.render();
       } else if (path === '#/notifications') {
         this.contentEl.innerHTML = NotificationsView.render();
+        void NotificationsView.markSeen();
       } else if (path === '#/login') {
         this.contentEl.innerHTML = AuthView.renderLogin();
       } else if (path === '#/register') {
@@ -8292,6 +8605,7 @@ class App {
       } else {
         this.contentEl.innerHTML = `<div class="container text-center" style="padding: 4rem;"><h2>পেজটি পাওয়া যায়নি (404)</h2><a href="#/" class="btn btn-primary" style="margin-top: 1rem;">হোম পেজে যান</a></div>`;
       }
+      this.maybeShowInstallPopup(path);
     } catch (err) {
       console.error('Routing error:', err);
       if (this.contentEl) {

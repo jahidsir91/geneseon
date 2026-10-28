@@ -463,6 +463,22 @@
   transform: scale(1);
 }
 
+.pwa-install-prompt {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  line-height: 1.65;
+}
+
+.pwa-install-prompt img {
+  flex: 0 0 auto;
+  border-radius: 16px;
+}
+
+.pwa-install-prompt p {
+  margin: 0;
+}
+
 .modal-header {
   padding: 1.25rem 1.5rem;
   border-bottom: 1px solid var(--divider);

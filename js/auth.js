@@ -42,7 +42,11 @@ export const Auth = {
     this.ready = request('/api/auth/me')
       .then(({ user }) => {
         this.currentUser = cacheUser(user);
-        return this.loadContent().then(() => this.currentUser);
+        if (this.currentUser) {
+          void this.loadContent();
+          void this.loadNotifications();
+        }
+        return this.currentUser;
       })
       .catch(error => {
         console.error('Authentication session check failed:', error);
@@ -58,9 +62,22 @@ export const Auth = {
     try {
       const content = await request('/api/content');
       db.mergeServerContent(content);
+      window.dispatchEvent(new CustomEvent('contentChanged'));
     } catch (error) {
       console.error('Server content synchronization failed:', error);
       Toast.warning('সার্ভারের নতুন কোর্স ও পরীক্ষার তথ্য লোড করা যায়নি।');
+    }
+  },
+
+  async loadNotifications() {
+    if (!this.currentUser) return;
+    try {
+      const { notifications } = await request('/api/notifications');
+      db.setServerNotifications(notifications || []);
+    } catch (error) {
+      console.error('Notification synchronization failed:', error);
+      db.setServerNotifications([]);
+      Toast.warning('নোটিফিকেশন লোড করা যায়নি।');
     }
   },
 
@@ -85,7 +102,8 @@ export const Auth = {
         body: JSON.stringify({ identifier: emailOrMobile.trim(), password })
       });
       this.currentUser = cacheUser(user);
-      await this.loadContent();
+      void this.loadContent();
+      void this.loadNotifications();
       this.saveSession();
       Toast.success(`স্বাগতম, ${user.name}!`);
       window.location.hash = user.role === 'ADMIN' ? '#/admin' : '#/dashboard';

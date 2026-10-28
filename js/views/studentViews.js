@@ -9,6 +9,12 @@ import { formatBDT, icons } from '../utils/helpers.js';
 import { Toast } from '../utils/toast.js';
 import { Modal } from '../utils/modal.js';
 
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, char => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[char]);
+}
+
 export const MyCoursesView = {
   render() {
     const user = Auth.getUser();
@@ -177,7 +183,8 @@ export const ProfileView = {
 
 export const NotificationsView = {
   render() {
-    const user = Auth.getUser() || db.getUserById('usr_ssc');
+    const user = Auth.getUser();
+    if (!user) return '';
     const notifs = db.getNotifications(user.id);
 
     return `
@@ -198,14 +205,14 @@ export const NotificationsView = {
             ${notifs.map(n => `
               <div class="card" style="padding: 1.25rem; display: flex; align-items: flex-start; gap: 1rem; border-left: 4px solid ${n.isRead ? 'var(--border-color)' : 'var(--primary)'}; background: ${n.isRead ? 'var(--bg-surface)' : 'var(--primary-light)'};">
                 <div style="width: 36px; height: 36px; border-radius: 50%; background: var(--bg-surface); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-                  ${n.type === 'course' ? icons.video : n.type === 'exam' ? icons.award : icons.bell}
+                  ${n.type === 'course' ? icons.video : n.type === 'exam' ? icons.award : n.type === 'book' ? icons.book : icons.bell}
                 </div>
                 <div style="flex: 1;">
                   <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem;">
-                    <h4 style="font-size: 1rem;">${n.title}</h4>
-                    <span class="text-muted" style="font-size: 0.75rem;">${n.date}</span>
+                    <h4 style="font-size: 1rem;">${escapeHtml(n.title)}</h4>
+                    <span class="text-muted" style="font-size: 0.75rem;">${escapeHtml(n.date)}</span>
                   </div>
-                  <p style="color: var(--text-muted); font-size: 0.9rem;">${n.message}</p>
+                  <p style="color: var(--text-muted); font-size: 0.9rem;">${escapeHtml(n.message)}</p>
                 </div>
               </div>
             `).join('')}
@@ -213,6 +220,33 @@ export const NotificationsView = {
         `}
       </div>
     `;
+  },
+
+  async markSeen() {
+    const user = Auth.getUser();
+    if (!user) return;
+    const ids = db.getNotifications(user.id).filter(notification => !notification.isRead)
+      .map(notification => notification.id);
+    if (!ids.length) return;
+    try {
+      const response = await fetch('/api/notifications/seen', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'নোটিফিকেশন দেখা হয়েছে চিহ্নিত করা যায়নি।');
+      db.markNotificationsRead(ids);
+      window.dispatchEvent(new CustomEvent('notificationsChanged'));
+      const content = document.getElementById('main-content');
+      if (content && window.location.hash === '#/notifications') {
+        content.innerHTML = NotificationsView.render();
+      }
+    } catch (error) {
+      console.error('Marking notifications as seen failed:', error);
+      Toast.error(error.message || 'নোটিফিকেশন দেখা হয়েছে চিহ্নিত করা যায়নি।');
+    }
   }
 };
 
@@ -255,12 +289,9 @@ window.submitAdminMode = async (event) => {
   await Auth.switchAdminMode({ role: 'ADMIN', password });
 };
 
-window.markAllNotifsRead = () => {
+window.markAllNotifsRead = async () => {
   const user = Auth.getUser();
   if (user) {
-    db.getNotifications(user.id).forEach(n => db.markNotificationRead(n.id));
-    Toast.success('সকল নোটিফিকেশন পড়া হয়েছে চিহ্নিত করা হয়েছে');
-    const content = document.getElementById('main-content');
-    if (content) content.innerHTML = NotificationsView.render();
+    await NotificationsView.markSeen();
   }
 };

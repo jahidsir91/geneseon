@@ -5,7 +5,7 @@ The Next.js server replaces the Python API while keeping the existing browser UI
 ## 1. Create the Supabase database
 
 1. Create a Supabase project and keep its database credentials private.
-2. Open **SQL Editor** and run [`supabase/migrations/0001_initial_schema.sql`](./supabase/migrations/0001_initial_schema.sql).
+2. Open **SQL Editor** and run the SQL files in [`supabase/migrations/`](./supabase/migrations/) in numeric order. Existing projects that already ran `0001_initial_schema.sql` should also run `0002_notifications.sql`.
 3. Copy the project URL and the **service role** key into the deployment environment. Never use the service role key in browser code or a `NEXT_PUBLIC_` variable. The tables have row-level security enabled; the Next.js server uses the service role key for authorized API operations.
 4. The migration creates the private `academy-files` bucket. It supports large course videos; uploads go from the browser to signed Supabase Storage URLs instead of passing through a Next.js request body.
 
@@ -33,6 +33,7 @@ The importer preserves user IDs, account roles, enrollment/profile data, passwor
 Use Node.js 20.9 or newer. Copy `.env.example` values to your hosting provider's **server-side** environment configuration. At minimum set:
 
 - `SUPABASE_URL`
+- `SUPABASE_ANON_KEY` (the public anon/publishable key used in signed Storage upload requests)
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `SUPABASE_STORAGE_BUCKET=academy-files`
 - `PUBLIC_APP_URL` to the final HTTPS origin

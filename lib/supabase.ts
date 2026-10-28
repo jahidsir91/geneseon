@@ -24,4 +24,5 @@ export const supabase: SupabaseClient = new Proxy({} as SupabaseClient, {
 });
 
 export const SUPABASE_URL = process.env.SUPABASE_URL ?? "";
+export const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY ?? "";
 export const STORAGE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET ?? "academy-files";

@@ -34,11 +34,16 @@ export class App {
     this.headerEl = document.getElementById('main-header');
     this.contentEl = document.getElementById('main-content');
     this.branding = { siteName: 'Geneseon Academy', logoUrl: null };
+    this.deferredInstallPrompt = null;
+    this.installPopupShown = false;
+    this.isPwaInstalled = window.matchMedia('(display-mode: standalone)').matches ||
+      window.navigator.standalone === true;
     
     this.init();
   }
 
   async init() {
+    this.setupAppInstallation();
     window.addEventListener('hashchange', () => this.handleRoute());
     window.addEventListener('authChanged', () => {
       this.renderHeader();
@@ -51,15 +56,99 @@ export class App {
     window.addEventListener('cartUpdated', () => {
       this.renderHeader();
     });
+    window.addEventListener('notificationsChanged', () => {
+      this.renderHeader();
+    });
+    window.addEventListener('contentChanged', () => {
+      void this.handleRoute();
+    });
 
-    await Auth.ready;
-    const activeExam = await ExamService.restoreCurrentSession();
+    const brandingPromise = this.loadBranding();
+    const [, activeExam] = await Promise.all([
+      Auth.ready,
+      ExamService.restoreCurrentSession()
+    ]);
     if (activeExam && !Auth.isAdmin()) {
       window.location.hash = `#/exam/${encodeURIComponent(activeExam.examId)}`;
     }
-    await this.loadBranding();
+    void brandingPromise;
     this.renderHeader();
     this.handleRoute();
+  }
+
+  setupAppInstallation() {
+    window.addEventListener('beforeinstallprompt', (event) => {
+      event.preventDefault();
+      this.deferredInstallPrompt = event;
+      this.renderHeader();
+    });
+    window.addEventListener('appinstalled', () => {
+      this.deferredInstallPrompt = null;
+      this.isPwaInstalled = true;
+      this.renderHeader();
+    });
+    document.addEventListener('click', (event) => {
+      const installButton = event.target.closest('.pwa-install-action');
+      if (!installButton) return;
+      Modal.close();
+      if (!this.deferredInstallPrompt) {
+        this.showAppInstallationInstructions();
+        return;
+      }
+
+      const installPrompt = this.deferredInstallPrompt;
+      this.deferredInstallPrompt = null;
+      void installPrompt.prompt().then(() => installPrompt.userChoice).then((choice) => {
+        if (choice.outcome === 'accepted') this.isPwaInstalled = true;
+        this.renderHeader();
+      }).catch((error) => {
+        console.error('App installation prompt failed:', error);
+        this.renderHeader();
+      });
+    });
+  }
+
+  maybeShowInstallPopup(path) {
+    if (
+      this.installPopupShown ||
+      this.isPwaInstalled ||
+      !['#/', ''].includes(path) ||
+      document.getElementById('current-modal-backdrop')
+    ) return;
+    this.installPopupShown = true;
+    window.setTimeout(() => {
+      if (this.isPwaInstalled || !['#/', ''].includes(window.location.hash || '#/')) return;
+      const language = i18n.getLang();
+      Modal.open({
+        title: language === 'bn' ? 'Geneseon Academy অ্যাপ ইনস্টল করুন' : 'Install the Geneseon Academy app',
+        content: `<div class="pwa-install-prompt">
+          <img src="/images/pwa-icon-192.png" alt="" width="72" height="72">
+          <p>${language === 'bn'
+            ? 'এক ট্যাপেই কোর্স, পরীক্ষা ও প্রশ্নব্যাংক ব্যবহার করতে অ্যাপটি আপনার ডিভাইসে ইনস্টল করুন।'
+            : 'Install the app on your device for one-tap access to courses, exams, and the question bank.'}</p>
+        </div>`,
+        footer: `<button class="btn btn-secondary" type="button" onclick="window.Modal.close()">${language === 'bn' ? 'এখন নয়' : 'Not now'}</button>
+          <button class="btn btn-primary pwa-install-action" type="button">${language === 'bn' ? 'ইনস্টল করুন' : 'Install app'}</button>`,
+        maxWidth: '440px'
+      });
+    }, 500);
+  }
+
+  showAppInstallationInstructions() {
+    const language = i18n.getLang();
+    const isIos = /iphone|ipad|ipod/i.test(window.navigator.userAgent);
+    const title = language === 'bn' ? 'অ্যাপ ইনস্টল করুন' : 'Install the app';
+    const instructions = isIos
+      ? language === 'bn'
+        ? 'Safari-তে Share বাটনে চাপুন, তারপর “Add to Home Screen” নির্বাচন করুন।'
+        : 'In Safari, tap Share, then choose “Add to Home Screen”.'
+      : language === 'bn'
+        ? 'ব্রাউজারের মেনু খুলে “Install app” অথবা “Add to Home screen” নির্বাচন করুন।'
+        : 'Open your browser menu and choose “Install app” or “Add to Home screen”.';
+    Modal.open({
+      title,
+      content: `<p>${instructions}</p>`
+    });
   }
 
   async loadBranding() {
@@ -298,6 +387,7 @@ export class App {
         this.contentEl.innerHTML = ProfileView.render();
       } else if (path === '#/notifications') {
         this.contentEl.innerHTML = NotificationsView.render();
+        void NotificationsView.markSeen();
       } else if (path === '#/login') {
         this.contentEl.innerHTML = AuthView.renderLogin();
       } else if (path === '#/register') {
@@ -311,6 +401,7 @@ export class App {
       } else {
         this.contentEl.innerHTML = `<div class="container text-center" style="padding: 4rem;"><h2>পেজটি পাওয়া যায়নি (404)</h2><a href="#/" class="btn btn-primary" style="margin-top: 1rem;">হোম পেজে যান</a></div>`;
       }
+      this.maybeShowInstallPopup(path);
     } catch (err) {
       console.error('Routing error:', err);
       if (this.contentEl) {

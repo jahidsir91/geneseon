@@ -19,11 +19,24 @@ export const DashboardView = {
     const exams = db.getExams().filter(e => e.category === category);
     const attempts = db.getExamAttempts(user.id);
 
-    // Calculate greeting based on current hour
-    const hour = new Date().getHours();
-    let greeting = i18n.t('goodMorning');
-    if (hour >= 12 && hour < 17) greeting = i18n.t('goodAfternoon');
-    else if (hour >= 17) greeting = i18n.t('goodEvening');
+    // Use Bangladesh time even when the device timezone differs.
+    const timeParts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Dhaka',
+      hour: 'numeric',
+      minute: 'numeric',
+      hourCycle: 'h23'
+    }).formatToParts(new Date());
+    const localTime = Object.fromEntries(timeParts.map(part => [part.type, part.value]));
+    const minutes = Number(localTime.hour) * 60 + Number(localTime.minute);
+    const greeting = minutes >= 19 * 60 + 30 || minutes < 4 * 60
+      ? 'শুভ রাত্রি'
+      : minutes >= 17 * 60
+        ? 'শুভ সন্ধ্যা'
+        : minutes >= 14 * 60
+          ? 'শুভ বিকাল'
+          : minutes >= 12 * 60
+            ? 'শুভ দুপুর'
+            : 'শুভ সকাল';
 
     // Dynamic tasks list based on user category
     let defaultTasks = [

@@ -2,7 +2,6 @@
    GENESEON ACADEMY - AI STUDY ASSISTANT VIEW (CHATGPT-STYLE)
    ========================================================================== */
 
-import { Auth } from '../auth.js';
 import { AiService } from '../services/aiService.js';
 import { icons } from '../utils/helpers.js';
 import { Toast } from '../utils/toast.js';
@@ -18,9 +17,9 @@ export const AiView = {
         sender: 'ai',
         text: `👋 **স্বাগতম!** আমি তোমার **জেনেসিওন একাডেমি এআই স্টাডি অ্যাসিস্ট্যান্ট**।
 
-বর্তমানে আমি তোমার **${ctx.label}** সিলেবাস অনুযায়ী যেকোনো প্রশ্নের সমাধান, কঠিন টপিকের সহজ ব্যাখ্যা, পড়ার রুটিন কিংবা কুইজ তৈরিতে সাহায্য করতে প্রস্তুত।
+আমি শুধু তোমার বিভাগের Question Bank-এ থাকা প্রশ্নের উত্তর ও ব্যাখ্যা দিতে পারি।
 
-নিচের যেকোনো কুইক অপশন বেছে নাও অথবা সরাসরি তোমার প্রশ্নটি লিখে পাঠাও!`
+প্রশ্নটি Question Bank-এ না থাকলে জানিয়ে দেব যে প্রশ্নটি পাওয়া যায়নি।`
       });
     }
 
@@ -66,16 +65,12 @@ export const AiView = {
 
         <!-- Quick Action Pills -->
         <div class="ai-quick-pills">
-          <button class="quick-pill" onclick="window.sendAiMessage('নিউটনের ৩য় গতিসূত্র বাস্তব উদাহরণসহ বাংলায় বুঝিয়ে দাও')">💡 বিষয় বুঝিয়ে দাও</button>
-          <button class="quick-pill" onclick="window.sendAiMessage('একটি গাড়ি ২ m/s² সুষম ত্বরণে ১০ সেকেন্ডে কত দূরত্ব যাবে সমাধান করো')">🔍 অঙ্ক সমাধান</button>
-          <button class="quick-pill" onclick="window.sendAiMessage('আমার জন্য গুরুত্বপূর্ণ ৫টি স্পেশাল প্র্যাকটিস MCQ দাও')">🎯 স্পেশাল MCQ</button>
-          <button class="quick-pill" onclick="window.sendAiMessage('আমার পরীক্ষার জন্য ৭ দিনের একটি কার্যকরী পড়ার রুটিন দাও')">📅 পড়ার রুটিন</button>
-          <button class="quick-pill" onclick="window.sendAiMessage('বাংলাদেশের সংবিধানের গুরুত্বপূর্ণ অনুচ্ছেদগুলো বুঝিয়ে দাও')">🏛️ সংবিধান অনুচ্ছেদ</button>
+          <p class="text-muted">শুধু তোমার বিভাগের Question Bank-এ থাকা প্রশ্নের উত্তর দেওয়া হবে। প্রশ্ন বা বিষয় লিখে খুঁজে দেখো।</p>
         </div>
 
         <!-- Chat Input Form -->
         <form class="ai-input-form" onsubmit="window.handleAiSubmit(event)">
-          <input type="text" id="ai-user-input" class="ai-input-field" placeholder="বাংলা, English বা Banglish-এ পড়াশোনার প্রশ্ন লিখুন..." autocomplete="off">
+          <input type="text" id="ai-user-input" class="ai-input-field" placeholder="Question Bank-এর প্রশ্নটি লিখুন..." autocomplete="off">
           <button type="submit" class="btn btn-primary" style="border-radius: var(--radius-lg); padding: 0.6rem 1.25rem;">
             ${icons.send}
           </button>

@@ -8,12 +8,13 @@ Use Node.js 20.9 or newer. Configure the server-side Supabase values in `.env.lo
 
 ```env
 SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_OR_PUBLISHABLE_KEY
 SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
 SUPABASE_STORAGE_BUCKET=academy-files
 PUBLIC_APP_URL=http://localhost:3000
 ```
 
-Never commit `.env.local` or expose the service-role key in browser code. Apply [`supabase/migrations/0001_initial_schema.sql`](./supabase/migrations/0001_initial_schema.sql) to your Supabase project, then run:
+Never commit `.env.local` or expose the service-role key in browser code. `SUPABASE_ANON_KEY` is the public anon/publishable key used for signed browser uploads; never use the service-role key for it. Apply the SQL files in [`supabase/migrations/`](./supabase/migrations/) in numeric order to your Supabase project, then run:
 
 ```powershell
 npm.cmd install
@@ -21,7 +22,6 @@ npm.cmd run dev
 npm install
 npm run dev
 ```
-
 Open `http://localhost:3000`. The production commands are `npm run build` and `npm start`.
 
 ## Data migration and deployment
