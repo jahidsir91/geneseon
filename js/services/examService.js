@@ -70,6 +70,43 @@ export const ExamService = {
   currentSession: null,
   timerInterval: null,
   submissionPromise: null,
+  favoriteQuestionIds: new Set(),
+  favoriteQuestionUserId: null,
+
+  async loadFavoriteQuestionIds() {
+    const userId = Auth.getUser()?.id;
+    if (!userId || Auth.isAdmin()) {
+      this.favoriteQuestionIds = new Set();
+      this.favoriteQuestionUserId = null;
+      return this.favoriteQuestionIds;
+    }
+    if (this.favoriteQuestionUserId === userId) return this.favoriteQuestionIds;
+    const response = await fetch('/api/student/question-favorites', { credentials: 'same-origin' });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'প্রিয় প্রশ্ন লোড করা যায়নি।');
+    this.favoriteQuestionIds = new Set(result.questionIds || []);
+    this.favoriteQuestionUserId = userId;
+    return this.favoriteQuestionIds;
+  },
+
+  isQuestionFavorite(questionId) {
+    return this.favoriteQuestionIds.has(questionId);
+  },
+
+  async setQuestionFavorite(questionId, isFavorite) {
+    const response = await fetch('/api/student/question-favorites', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ questionId, isFavorite })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'প্রিয় প্রশ্ন সংরক্ষণ করা যায়নি।');
+    if (result.isFavorite) this.favoriteQuestionIds.add(questionId);
+    else this.favoriteQuestionIds.delete(questionId);
+    this.favoriteQuestionUserId = Auth.getUser()?.id ?? null;
+    return result.isFavorite;
+  },
 
   startExam(examId) {
     const exam = db.getExamById(examId);
@@ -133,7 +170,7 @@ export const ExamService = {
       durationSeconds: effectiveDurationSeconds,
       remainingSeconds: effectiveDurationSeconds,
       deadlineAt,
-      negativeMarking: exam.negativeMarking || 0.25,
+      negativeMarking: Number(exam.negativeMarking ?? 0.25),
       currentIndex: 0,
       answers: {}, // { [questionId]: selectedOptionIndex }
       cqAnswerSheet: null,

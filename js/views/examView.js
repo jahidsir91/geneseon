@@ -234,8 +234,10 @@ export const ExamView = {
                   <div class="lbl">পূর্ণমান</div>
                 </div>
               </div>
-              <div style="font-size: 0.8rem; color: var(--danger); font-weight: 500;">
-                ⚠️ ভুল উত্তরের জন্য -${e.negativeMarking} নম্বর কাটা যাবে
+              <div style="font-size: 0.8rem; color: ${Number(e.negativeMarking ?? 0.25) > 0 ? 'var(--danger)' : 'var(--text-muted)'}; font-weight: 500;">
+                ${Number(e.negativeMarking ?? 0.25) > 0
+                  ? `⚠️ ভুল উত্তরের জন্য -${Number(e.negativeMarking ?? 0.25)} নম্বর কাটা যাবে`
+                  : 'নেগেটিভ মার্কিং নেই'}
               </div>
               <a href="#/exam/${escapeHtml(e.id)}" class="btn btn-primary btn-lg btn-block exam-start-button" data-exam-action="${escapeHtml(e.id)}" aria-disabled="${schedule.upcoming || schedule.expired}" onclick="return window.openScheduledExam('${escapeHtml(e.id)}', event)">
                 ${icons.play}<span data-exam-label>${schedule.upcoming ? `শুরু হতে বাকি ${formatCountdown(schedule.countdown)}` : schedule.expired ? 'সময় শেষ' : 'পরীক্ষা শুরু করুন'}</span>
@@ -252,7 +254,7 @@ export const ExamView = {
     return markup;
   },
 
-  renderRunner(examId) {
+  async renderRunner(examId) {
     if (scheduleInterval) clearInterval(scheduleInterval);
     const activeSession = ExamService.getCurrentSession();
     const session = activeSession?.examId === examId && activeSession.userId === Auth.getUser()?.id
@@ -260,6 +262,14 @@ export const ExamView = {
       : ExamService.startExam(examId);
     if (!session) {
       return `<div class="container text-center" style="padding: 4rem;"><h2>পরীক্ষাটি পাওয়া যায়নি</h2><a href="#/exam" class="btn btn-primary">সকল পরীক্ষা</a></div>`;
+    }
+    if (!Auth.isAdmin()) {
+      try {
+        await ExamService.loadFavoriteQuestionIds();
+      } catch (error) {
+        console.error('Exam question favorites could not be loaded:', error);
+        Toast.error(error.message || 'প্রিয় প্রশ্ন লোড করা যায়নি।');
+      }
     }
     if (!Auth.isAdmin()) guardExamSession(session);
     if (session.scrollY > 0) {
@@ -341,13 +351,15 @@ export const ExamView = {
             ${session.questions.map((question, questionIndex) => {
               const selectedOption = session.answers[question.id];
               const isFlagged = session.flagged.has(question.id);
+              const isFavorite = ExamService.isQuestionFavorite(question.id);
               const isCQQuestion = question.questionType === 'CQ';
               return `
                 <article class="question-card-runner" id="exam-question-${questionIndex}" data-question-card="${escapeHtml(question.id)}" data-answered="${selectedOption !== undefined}">
                   <div class="question-runner-header">
                     <span class="question-runner-number">প্রশ্ন ${questionIndex + 1} / ${session.questions.length}</span>
                     <div style="display: flex; align-items: center; gap: 0.5rem;">
-                      ${isCQQuestion ? '<span class="badge badge-info" style="font-size: 0.75rem;">CQ • PDF উত্তরপত্রে মূল্যায়ন</span>' : `<span class="badge badge-warning" style="font-size: 0.75rem;">নেগেটিভ মার্ক: -${session.negativeMarking}</span>`}
+                      ${isCQQuestion ? '<span class="badge badge-info" style="font-size: 0.75rem;">CQ • PDF উত্তরপত্রে মূল্যায়ন</span>' : session.negativeMarking > 0 ? `<span class="badge badge-warning" style="font-size: 0.75rem;">নেগেটিভ মার্ক: -${session.negativeMarking}</span>` : '<span class="badge badge-success" style="font-size: 0.75rem;">নেগেটিভ মার্কিং নেই</span>'}
+                      ${!Auth.isAdmin() && !isCQQuestion ? `<button class="btn btn-ghost btn-sm" type="button" data-favorite-question="${escapeHtml(question.id)}" aria-pressed="${isFavorite}" onclick="window.toggleExamQuestionFavorite('${escapeHtml(question.id)}')">${isFavorite ? '★ ফেভারিটে আছে' : '☆ ফেভারিট করুন'}</button>` : ''}
                       <button class="btn btn-ghost btn-sm" data-flag-question="${escapeHtml(question.id)}" onclick="window.toggleExamFlag('${escapeHtml(question.id)}')" style="color: ${isFlagged ? 'var(--accent)' : 'var(--text-muted)'}">
                         ★ ${isFlagged ? 'রিভিউ থেকে সরান' : 'রিভিউ রাখুন'}
                       </button>
@@ -741,3 +753,24 @@ window.confirmSubmitExam = () => {
 };
 
 window.submitExamAutomatically = submitExamAutomatically;
+
+window.toggleExamQuestionFavorite = async questionId => {
+  const button = document.querySelector(`[data-favorite-question="${CSS.escape(questionId)}"]`);
+  if (!button) return;
+  button.disabled = true;
+  try {
+    const isFavorite = await ExamService.setQuestionFavorite(
+      questionId,
+      !ExamService.isQuestionFavorite(questionId)
+    );
+    button.setAttribute('aria-pressed', String(isFavorite));
+    button.textContent = isFavorite ? '★ ফেভারিটে আছে' : '☆ ফেভারিট করুন';
+    Toast.success(isFavorite
+      ? 'প্রশ্নটি ফেভারিটে সংরক্ষণ হয়েছে।'
+      : 'প্রশ্নটি ফেভারিট থেকে সরানো হয়েছে।');
+  } catch (error) {
+    Toast.error(error.message || 'প্রিয় প্রশ্ন সংরক্ষণ করা যায়নি।');
+  } finally {
+    button.disabled = false;
+  }
+};

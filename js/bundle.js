@@ -1757,6 +1757,43 @@ const ExamService = window.ExamService = {
   currentSession: null,
   timerInterval: null,
   submissionPromise: null,
+  favoriteQuestionIds: new Set(),
+  favoriteQuestionUserId: null,
+
+  async loadFavoriteQuestionIds() {
+    const userId = Auth.getUser()?.id;
+    if (!userId || Auth.isAdmin()) {
+      this.favoriteQuestionIds = new Set();
+      this.favoriteQuestionUserId = null;
+      return this.favoriteQuestionIds;
+    }
+    if (this.favoriteQuestionUserId === userId) return this.favoriteQuestionIds;
+    const response = await fetch('/api/student/question-favorites', { credentials: 'same-origin' });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'প্রিয় প্রশ্ন লোড করা যায়নি।');
+    this.favoriteQuestionIds = new Set(result.questionIds || []);
+    this.favoriteQuestionUserId = userId;
+    return this.favoriteQuestionIds;
+  },
+
+  isQuestionFavorite(questionId) {
+    return this.favoriteQuestionIds.has(questionId);
+  },
+
+  async setQuestionFavorite(questionId, isFavorite) {
+    const response = await fetch('/api/student/question-favorites', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ questionId, isFavorite })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'প্রিয় প্রশ্ন সংরক্ষণ করা যায়নি।');
+    if (result.isFavorite) this.favoriteQuestionIds.add(questionId);
+    else this.favoriteQuestionIds.delete(questionId);
+    this.favoriteQuestionUserId = Auth.getUser()?.id ?? null;
+    return result.isFavorite;
+  },
 
   startExam(examId) {
     const exam = db.getExamById(examId);
@@ -1820,7 +1857,7 @@ const ExamService = window.ExamService = {
       durationSeconds: effectiveDurationSeconds,
       remainingSeconds: effectiveDurationSeconds,
       deadlineAt,
-      negativeMarking: exam.negativeMarking || 0.25,
+      negativeMarking: Number(exam.negativeMarking ?? 0.25),
       currentIndex: 0,
       answers: {}, // { [questionId]: selectedOptionIndex }
       cqAnswerSheet: null,
@@ -3242,8 +3279,10 @@ const ExamView = window.ExamView = {
                   <div class="lbl">পূর্ণমান</div>
                 </div>
               </div>
-              <div style="font-size: 0.8rem; color: var(--danger); font-weight: 500;">
-                ⚠️ ভুল উত্তরের জন্য -${e.negativeMarking} নম্বর কাটা যাবে
+              <div style="font-size: 0.8rem; color: ${Number(e.negativeMarking ?? 0.25) > 0 ? 'var(--danger)' : 'var(--text-muted)'}; font-weight: 500;">
+                ${Number(e.negativeMarking ?? 0.25) > 0
+                  ? `⚠️ ভুল উত্তরের জন্য -${Number(e.negativeMarking ?? 0.25)} নম্বর কাটা যাবে`
+                  : 'নেগেটিভ মার্কিং নেই'}
               </div>
               <a href="#/exam/${escapeHtml(e.id)}" class="btn btn-primary btn-lg btn-block exam-start-button" data-exam-action="${escapeHtml(e.id)}" aria-disabled="${schedule.upcoming || schedule.expired}" onclick="return window.openScheduledExam('${escapeHtml(e.id)}', event)">
                 ${icons.play}<span data-exam-label>${schedule.upcoming ? `শুরু হতে বাকি ${formatCountdown(schedule.countdown)}` : schedule.expired ? 'সময় শেষ' : 'পরীক্ষা শুরু করুন'}</span>
@@ -3260,7 +3299,7 @@ const ExamView = window.ExamView = {
     return markup;
   },
 
-  renderRunner(examId) {
+  async renderRunner(examId) {
     if (scheduleInterval) clearInterval(scheduleInterval);
     const activeSession = ExamService.getCurrentSession();
     const session = activeSession?.examId === examId && activeSession.userId === Auth.getUser()?.id
@@ -3268,6 +3307,14 @@ const ExamView = window.ExamView = {
       : ExamService.startExam(examId);
     if (!session) {
       return `<div class="container text-center" style="padding: 4rem;"><h2>পরীক্ষাটি পাওয়া যায়নি</h2><a href="#/exam" class="btn btn-primary">সকল পরীক্ষা</a></div>`;
+    }
+    if (!Auth.isAdmin()) {
+      try {
+        await ExamService.loadFavoriteQuestionIds();
+      } catch (error) {
+        console.error('Exam question favorites could not be loaded:', error);
+        Toast.error(error.message || 'প্রিয় প্রশ্ন লোড করা যায়নি।');
+      }
     }
     if (!Auth.isAdmin()) guardExamSession(session);
     if (session.scrollY > 0) {
@@ -3349,13 +3396,15 @@ const ExamView = window.ExamView = {
             ${session.questions.map((question, questionIndex) => {
               const selectedOption = session.answers[question.id];
               const isFlagged = session.flagged.has(question.id);
+              const isFavorite = ExamService.isQuestionFavorite(question.id);
               const isCQQuestion = question.questionType === 'CQ';
               return `
                 <article class="question-card-runner" id="exam-question-${questionIndex}" data-question-card="${escapeHtml(question.id)}" data-answered="${selectedOption !== undefined}">
                   <div class="question-runner-header">
                     <span class="question-runner-number">প্রশ্ন ${questionIndex + 1} / ${session.questions.length}</span>
                     <div style="display: flex; align-items: center; gap: 0.5rem;">
-                      ${isCQQuestion ? '<span class="badge badge-info" style="font-size: 0.75rem;">CQ • PDF উত্তরপত্রে মূল্যায়ন</span>' : `<span class="badge badge-warning" style="font-size: 0.75rem;">নেগেটিভ মার্ক: -${session.negativeMarking}</span>`}
+                      ${isCQQuestion ? '<span class="badge badge-info" style="font-size: 0.75rem;">CQ • PDF উত্তরপত্রে মূল্যায়ন</span>' : session.negativeMarking > 0 ? `<span class="badge badge-warning" style="font-size: 0.75rem;">নেগেটিভ মার্ক: -${session.negativeMarking}</span>` : '<span class="badge badge-success" style="font-size: 0.75rem;">নেগেটিভ মার্কিং নেই</span>'}
+                      ${!Auth.isAdmin() && !isCQQuestion ? `<button class="btn btn-ghost btn-sm" type="button" data-favorite-question="${escapeHtml(question.id)}" aria-pressed="${isFavorite}" onclick="window.toggleExamQuestionFavorite('${escapeHtml(question.id)}')">${isFavorite ? '★ ফেভারিটে আছে' : '☆ ফেভারিট করুন'}</button>` : ''}
                       <button class="btn btn-ghost btn-sm" data-flag-question="${escapeHtml(question.id)}" onclick="window.toggleExamFlag('${escapeHtml(question.id)}')" style="color: ${isFlagged ? 'var(--accent)' : 'var(--text-muted)'}">
                         ★ ${isFlagged ? 'রিভিউ থেকে সরান' : 'রিভিউ রাখুন'}
                       </button>
@@ -3749,6 +3798,26 @@ window.confirmSubmitExam = () => {
 };
 
 window.submitExamAutomatically = submitExamAutomatically;
+window.toggleExamQuestionFavorite = async questionId => {
+  const button = document.querySelector(`[data-favorite-question="${CSS.escape(questionId)}"]`);
+  if (!button) return;
+  button.disabled = true;
+  try {
+    const isFavorite = await ExamService.setQuestionFavorite(
+      questionId,
+      !ExamService.isQuestionFavorite(questionId)
+    );
+    button.setAttribute('aria-pressed', String(isFavorite));
+    button.textContent = isFavorite ? '★ ফেভারিটে আছে' : '☆ ফেভারিট করুন';
+    Toast.success(isFavorite
+      ? 'প্রশ্নটি ফেভারিটে সংরক্ষণ হয়েছে।'
+      : 'প্রশ্নটি ফেভারিট থেকে সরানো হয়েছে।');
+  } catch (error) {
+    Toast.error(error.message || 'প্রিয় প্রশ্ন সংরক্ষণ করা যায়নি।');
+  } finally {
+    button.disabled = false;
+  }
+};
 
 
 /* --- [js/views/questionBankView.js] --- */
@@ -3762,6 +3831,7 @@ window.submitExamAutomatically = submitExamAutomatically;
 
 
 let revealedAnswers = new Set();
+let favoriteQuestionIds = new Set();
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, char => ({
@@ -4081,11 +4151,12 @@ const QuestionBankView = window.QuestionBankView = {
 
             <div class="form-group">
               <label class="form-label">কঠিনতার মাত্রা (Difficulty)</label>
-              <select id="gen-difficulty" class="form-select">
+              <select id="gen-difficulty" class="form-select" onchange="window.updatePracticeFilters()">
                 <option value="ALL">সকল মাত্রা (সহজ + মাঝারি + কঠিন)</option>
                 <option value="Easy">সহজ (Basic Standard)</option>
                 <option value="Medium">মাঝারি (Board Standard)</option>
                 <option value="Hard">কঠিন (Top College / BCS Advanced)</option>
+                ${user && !Auth.isAdmin() ? '<option value="FAVORITES">ফেভারিট প্রশ্ন</option>' : ''}
               </select>
             </div>
 
@@ -4099,6 +4170,18 @@ const QuestionBankView = window.QuestionBankView = {
   }
 };
 
+QuestionBankView.loadFavoriteQuestionIds = async () => {
+  const user = Auth.getUser();
+  if (!user || Auth.isAdmin()) {
+    favoriteQuestionIds = new Set();
+    return;
+  }
+  const response = await fetch('/api/student/question-favorites', { credentials: 'same-origin' });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || 'ফেভারিট প্রশ্ন লোড করা যায়নি।');
+  favoriteQuestionIds = new Set(result.questionIds || []);
+};
+
 window.updatePracticeFilters = () => {
   const categorySelect = document.getElementById('gen-category');
   const subjectSelect = document.getElementById('gen-subject');
@@ -4109,8 +4192,12 @@ window.updatePracticeFilters = () => {
   const category = user && !Auth.isAdmin()
     ? user.educationType
     : categorySelect?.value;
+  const difficulty = document.getElementById('gen-difficulty')?.value || 'ALL';
   const questions = db.getQuestions().filter(question =>
-    question.category === category && (!question.questionType || question.questionType === 'MCQ')
+    question.category === category
+    && (!question.questionType || question.questionType === 'MCQ')
+    && (difficulty !== 'FAVORITES' || favoriteQuestionIds.has(question.id))
+    && (difficulty === 'ALL' || difficulty === 'FAVORITES' || question.difficulty === difficulty)
   );
   const previousSubject = subjectSelect.value;
   const subjects = [...new Set(questions.map(question => question.subject).filter(Boolean))];
@@ -4250,14 +4337,20 @@ window.generateCustomTest = (e) => {
   const count = parseInt(document.getElementById('gen-count').value, 10) || 10;
   const subject = document.getElementById('gen-subject').value;
   const chapter = document.getElementById('gen-chapter').value;
+  const difficulty = document.getElementById('gen-difficulty').value;
+  const favoritesOnly = difficulty === 'FAVORITES';
   const matchingQuestions = db.getQuestions().filter(question =>
     question.category === cat
     && question.subject === subject
     && (chapter === 'ALL' || question.chapter === chapter)
     && (!question.questionType || question.questionType === 'MCQ')
+    && (!favoritesOnly || favoriteQuestionIds.has(question.id))
+    && (difficulty === 'ALL' || difficulty === 'FAVORITES' || question.difficulty === difficulty)
   );
   if (!matchingQuestions.length) {
-    Toast.error('এই বিষয় ও অধ্যায়ে কোনো প্রশ্ন নেই।');
+    Toast.error(favoritesOnly
+      ? 'নির্বাচিত কঠিনতার এই বিষয় ও অধ্যায়ে কোনো ফেভারিট প্রশ্ন নেই।'
+      : 'এই কঠিনতার বিষয় ও অধ্যায়ে কোনো প্রশ্ন নেই।');
     return;
   }
   const selectedQuestions = matchingQuestions.slice(0, count);
@@ -4918,6 +5011,23 @@ const DashboardView = window.DashboardView = {
     const activeCourse = courses[0];
     const exams = db.getExams().filter(e => e.category === category);
     const attempts = db.getExamAttempts(user.id);
+    const scoredAttempts = attempts.map(attempt => {
+      const percentage = Number.isFinite(Number(attempt.percentage))
+        ? Number(attempt.percentage)
+        : Number(attempt.totalMarks) > 0
+          ? Number(attempt.score) / Number(attempt.totalMarks) * 100
+          : null;
+      return percentage === null ? null : { ...attempt, percentage };
+    }).filter(Boolean);
+    const averageScore = scoredAttempts.length
+      ? Math.round(scoredAttempts.reduce((sum, attempt) => sum + attempt.percentage, 0) / scoredAttempts.length)
+      : 0;
+    const correctAnswers = attempts.reduce((sum, attempt) => sum + (Number(attempt.correct) || 0), 0);
+    const wrongAnswers = attempts.reduce((sum, attempt) => sum + (Number(attempt.wrong) || 0), 0);
+    const answeredQuestions = correctAnswers + wrongAnswers;
+    const accuracy = answeredQuestions
+      ? Math.round(correctAnswers / answeredQuestions * 100)
+      : 0;
 
     // Use Bangladesh time even when the device timezone differs.
     const timeParts = new Intl.DateTimeFormat('en-US', {
@@ -4937,29 +5047,6 @@ const DashboardView = window.DashboardView = {
           : minutes >= 12 * 60
             ? 'শুভ দুপুর'
             : 'শুভ সকাল';
-
-    // Dynamic tasks list based on user category
-    let defaultTasks = [
-      { id: 't1', text: 'পদার্থবিজ্ঞান অধ্যায় ১: ভার্নিয়ার ধ্রুবক লেকচার দেখা', done: true },
-      { id: 't2', text: 'জেনেসিওন একাডেমি প্রশ্নব্যাংক থেকে ২০টি বোর্ড MCQ সমাধান', done: false },
-      { id: 't3', text: 'আজকের সাপ্তাহিক লাইভ মডেল টেস্টে অংশগ্রহণ', done: false },
-      { id: 't4', text: 'দুর্বল টপিক ডায়াগনস্টিক রিপোর্ট রিভিউ করা', done: false }
-    ];
-
-    if (category === 'JOB') {
-      defaultTasks = [
-        { id: 't1', text: 'বাংলা সাহিত্য: প্রাচীন ও মধ্যযুগের চর্যাপদ রিভিশন', done: true },
-        { id: 't2', text: '৪৬তম বিসিএস বাংলাদেশ বিষয়াবলী প্রশ্ন এনালাইসিস', done: false },
-        { id: 't3', text: 'গাণিতিক যুক্তির শতকরা ও লাভ-ক্ষতির শর্টকাট প্র্যাকটিস', done: false },
-        { id: 't4', text: 'ডেইলি আন্তর্জাতিক সাম্প্রতিক সমাচার কুইজ', done: false }
-      ];
-    } else if (category === 'HSC') {
-      defaultTasks = [
-        { id: 't1', text: 'উচ্চতর গণিত: ভেক্টর ডট ও ক্রস গুণনের প্রয়োগ', done: true },
-        { id: 't2', text: 'রসায়ন ২য় পত্র: জৈব যৌগের রূপান্তর চার্ট মুখস্থ', done: false },
-        { id: 't3', text: 'এইচএসসি মেগা মডেল টেস্ট ০১ দেওয়া', done: false }
-      ];
-    }
 
     return `
       <div class="container" style="padding-top: 2rem;">
@@ -5038,15 +5125,15 @@ const DashboardView = window.DashboardView = {
             <!-- Performance Stats Grid -->
             <div class="stats-cards-grid">
               <div class="stat-box">
-                <div class="val">${attempts.length || 6}</div>
+                <div class="val">${attempts.length}</div>
                 <div class="lbl">অংশগ্রহণকৃত পরীক্ষা</div>
               </div>
               <div class="stat-box">
-                <div class="val" style="color: var(--primary);">88.5%</div>
+                <div class="val" style="color: var(--primary);">${averageScore}%</div>
                 <div class="lbl">গড় স্কোর</div>
               </div>
               <div class="stat-box">
-                <div class="val" style="color: var(--success);">94.2%</div>
+                <div class="val" style="color: var(--success);">${accuracy}%</div>
                 <div class="lbl">নির্ভুলতা (Accuracy)</div>
               </div>
             </div>
@@ -5077,20 +5164,9 @@ const DashboardView = window.DashboardView = {
           <!-- Right Column -->
           <div>
             <!-- Today's Study Tasks Checklist -->
-            <div class="tasks-card">
-              <div class="tasks-header">
-                <h3 style="font-size: 1.1rem;">${i18n.t('todaysTasks')}</h3>
-                <span class="badge badge-ssc">আজকের লক্ষ্য</span>
-              </div>
-              <ul class="tasks-list">
-                ${defaultTasks.map(t => `
-                  <li class="task-item ${t.done ? 'completed' : ''}" onclick="this.classList.toggle('completed')">
-                    <input type="checkbox" class="task-checkbox" ${t.done ? 'checked' : ''}>
-                    <span class="task-text">${t.text}</span>
-                  </li>
-                `).join('')}
-              </ul>
-            </div>
+            ${user.role === 'STUDENT' && !isAdminPreview
+              ? '<div id="study-goals-container" class="tasks-card"><p class="text-muted">১২ দিনের অধ্যয়নের লক্ষ্য লোড হচ্ছে...</p></div>'
+              : ''}
 
             <!-- Upcoming Live Exams Widget -->
             <div class="card" style="padding: 1.5rem; margin-bottom: 1.5rem;">
@@ -5122,8 +5198,123 @@ const DashboardView = window.DashboardView = {
         </div>
       </div>
     `;
+  },
+
+  async loadStudyGoals() {
+    const container = document.getElementById('study-goals-container');
+    if (!container) return;
+    try {
+      const response = await fetch('/api/student/study-goals', { credentials: 'same-origin' });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'অধ্যয়নের লক্ষ্য লোড করা যায়নি।');
+      if (!result.goals) {
+        container.innerHTML = `<h3>${escapeStudyGoalText(result.category)} বিভাগের লক্ষ্য</h3><p class="text-muted">অ্যাডমিন এখনো ${escapeStudyGoalText(result.category)} বিভাগের ১২ দিনের অধ্যয়নের লক্ষ্য সেট করেননি।</p>`;
+        return;
+      }
+
+      const completedGoals = result.completedGoals || [];
+      const category = escapeStudyGoalText(result.category);
+      const energy = Number(result.energyPercent) || 0;
+      const dayIndex = Number(result.dayIndex) || 1;
+      const dailyCompleted = completedGoals.filter(goal => goal.dayIndex === dayIndex).length;
+      container.innerHTML = `
+        <div class="study-goal-header">
+          <div>
+            <h3>${category} বিভাগের লক্ষ্য</h3>
+            <span class="badge badge-ssc">দিন ${dayIndex} / ১২</span>
+          </div>
+          <button class="study-energy-button" type="button" style="--energy-level:${energy}%"
+            aria-label="স্টাডি এনার্জি ${energy} শতাংশ" onclick="window.showStudyGoalEnergy(${energy})">⚡</button>
+        </div>
+        <div class="study-energy-info">
+          <strong>১২ দিন study streak</strong>
+          <span>${energy}% এনার্জি • ${result.completedCount || 0}/36 লক্ষ্য</span>
+        </div>
+        <div class="study-energy-track" role="progressbar" aria-valuenow="${energy}" aria-valuemin="0" aria-valuemax="100">
+          <div class="study-energy-fill" style="width:${energy}%"></div>
+        </div>
+        ${result.cycleComplete ? `
+          <p class="study-goal-cycle-complete">১২ দিনের সব লক্ষ্য সম্পন্ন হয়েছে!</p>
+        ` : `
+          <p class="text-muted study-goal-day-progress">${dailyCompleted}/3 লক্ষ্য সম্পন্ন</p>
+          <ul class="tasks-list">
+            ${result.goals[dayIndex - 1].map((goal, goalIndex) => {
+              const isComplete = completedGoals.some(item =>
+                item.dayIndex === dayIndex && item.goalIndex === goalIndex
+              );
+              return `
+                <li class="task-item ${isComplete ? 'completed' : ''}">
+                  <input type="checkbox" class="task-checkbox" ${isComplete ? 'checked disabled' : ''}
+                    aria-label="লক্ষ্য সম্পন্ন করুন"
+                    onchange="window.completeStudyGoal(${dayIndex}, ${goalIndex}, this.checked)">
+                  <span class="task-text">${escapeStudyGoalText(goal)}</span>
+                </li>
+              `;
+            }).join('')}
+          </ul>
+        `}
+      `;
+      if (result.cycleComplete && !document.getElementById('study-goal-congrats-modal')) {
+        window.Modal?.open({
+          title: 'Congrats!',
+          content: '<p id="study-goal-congrats-modal">Congrats. You did good job. Try next 12 days</p>',
+          footer: '<button class="btn btn-primary" type="button" onclick="window.startNextStudyGoalCycle()">Try next 12 days</button>',
+        });
+      }
+    } catch (error) {
+      container.innerHTML = `<p class="text-danger">${escapeStudyGoalText(error.message || 'অধ্যয়নের লক্ষ্য লোড করা যায়নি।')}</p>`;
+    }
+  },
+
+  async completeStudyGoal(dayIndex, goalIndex, checked) {
+    if (!checked) return;
+    try {
+      const response = await fetch('/api/student/study-goals/complete', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dayIndex, goalIndex })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'লক্ষ্যটি সম্পন্ন করা যায়নি।');
+      await this.loadStudyGoals();
+    } catch (error) {
+      Toast.error(error.message || 'লক্ষ্যটি সম্পন্ন করা যায়নি।');
+      await this.loadStudyGoals();
+    }
+  },
+
+  showStudyGoalEnergy(energy) {
+    Toast.info(`তোমার ১২ দিনের স্টাডি এনার্জি এখন ${energy}%।`);
+  },
+
+  async startNextStudyGoalCycle() {
+    try {
+      const response = await fetch('/api/student/study-goals/next-cycle', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'পরের ১২ দিনের লক্ষ্য শুরু করা যায়নি।');
+      window.Modal?.close();
+      await this.loadStudyGoals();
+    } catch (error) {
+      Toast.error(error.message || 'পরের ১২ দিনের লক্ষ্য শুরু করা যায়নি।');
+    }
   }
 };
+
+function escapeStudyGoalText(value) {
+  return String(value ?? '').replace(/[&<>"']/g, character => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[character]);
+}
+
+window.completeStudyGoal = (...args) => DashboardView.completeStudyGoal(...args);
+window.showStudyGoalEnergy = energy => DashboardView.showStudyGoalEnergy(energy);
+window.startNextStudyGoalCycle = () => DashboardView.startNextStudyGoalCycle();
 
 
 /* --- [js/views/studentViews.js] --- */
@@ -5828,18 +6019,24 @@ function renderCourseEditorLesson(lesson = {}) {
         <input class="form-input course-lesson-title" required maxlength="160" value="${escapeHtml(lesson.title || '')}" placeholder="যেমন: লেকচার ০১ - মৌলিক ধারণা">
       </div>
       <div class="form-group">
-        <label class="form-label">ভিডিও (MP4/WebM/MOV, সর্বোচ্চ ৫ GB)</label>
+        <label class="form-label">ভিডিও আপলোড (MP4/WebM/MOV, সর্বোচ্চ ৫ GB)</label>
         <input type="file" class="form-input course-lesson-video" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov">
+        <label class="form-label" style="margin-top: 0.5rem;">অথবা ভিডিও URL</label>
+        <input type="url" class="form-input course-lesson-video-url" maxlength="2000" value="${escapeHtml(lesson.videoUrl || '')}" placeholder="https://example.com/lecture.mp4">
         ${lesson.videoUrl ? `<small class="text-muted">বর্তমান ভিডিও: <a href="${escapeHtml(lesson.videoUrl)}" target="_blank" rel="noopener">দেখুন</a> (নতুন ফাইল দিলে প্রতিস্থাপিত হবে)</small>` : ''}
       </div>
       <div class="form-group">
-        <label class="form-label">লেকচার PDF (সর্বোচ্চ ১০০ MB)</label>
+        <label class="form-label">লেকচার PDF আপলোড (সর্বোচ্চ ১০০ MB)</label>
         <input type="file" class="form-input course-lesson-pdf" accept="application/pdf,.pdf">
+        <label class="form-label" style="margin-top: 0.5rem;">অথবা লেকচার PDF URL</label>
+        <input type="url" class="form-input course-lesson-pdf-url" maxlength="2000" value="${escapeHtml(pdfUrl)}" placeholder="https://example.com/lecture.pdf">
         ${pdfUrl ? `<small class="text-muted">বর্তমান PDF: <a href="${escapeHtml(pdfUrl)}" target="_blank" rel="noopener">দেখুন</a> (নতুন ফাইল দিলে প্রতিস্থাপিত হবে)</small>` : ''}
       </div>
       <div class="form-group">
-        <label class="form-label">Notes PDF (ঐচ্ছিক, সর্বোচ্চ ১০০ MB)</label>
+        <label class="form-label">Notes PDF আপলোড (ঐচ্ছিক, সর্বোচ্চ ১০০ MB)</label>
         <input type="file" class="form-input course-lesson-notes-pdf" accept="application/pdf,.pdf">
+        <label class="form-label" style="margin-top: 0.5rem;">অথবা Notes PDF URL (ঐচ্ছিক)</label>
+        <input type="url" class="form-input course-lesson-notes-pdf-url" maxlength="2000" value="${escapeHtml(notesPdfUrl)}" placeholder="https://example.com/notes.pdf">
         ${notesPdfUrl ? `<small class="text-muted">বর্তমান Notes PDF: <a href="${escapeHtml(notesPdfUrl)}" target="_blank" rel="noopener">দেখুন</a> (নতুন ফাইল দিলে প্রতিস্থাপিত হবে)</small>` : ''}
       </div>
       <div class="form-group">
@@ -5911,7 +6108,7 @@ function openCourseEditor(course = null) {
         <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 1.5rem;">
           <div>
             <h4>Chapter ও Lecture কনটেন্ট</h4>
-            <small class="text-muted">প্রতি Lecture-এ ভিডিও, PDF, লিখিত Notes এবং Notes PDF যোগ করুন।</small>
+            <small class="text-muted">প্রতি Lecture-এ ভিডিও ও লেকচার PDF upload বা URL দিয়ে যোগ করুন। Notes PDF ঐচ্ছিক।</small>
           </div>
           <button type="button" class="btn btn-secondary btn-sm" onclick="window.addCourseEditorChapter()">+ Chapter যোগ করুন</button>
         </div>
@@ -5928,8 +6125,10 @@ const AdminView = window.AdminView = {
   examAttempts: [],
   paymentOrders: [],
   brandingLogoUrl: null,
+  studyGoalPlan: Array.from({ length: 12 }, () => ['', '', '']),
+  studyGoalCategory: 'SSC',
 
-  async loadFromServer() {
+  async loadFromServer(subTab = '') {
     const response = await fetch('/api/admin/state', { credentials: 'same-origin' });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'অ্যাডমিন ডেটা লোড করা যায়নি।');
@@ -5938,6 +6137,27 @@ const AdminView = window.AdminView = {
     this.paymentOrders = result.paymentOrders || [];
     this.brandingLogoUrl = result.branding?.logoUrl || null;
     db.mergeServerContent(result);
+    if (subTab === 'study-goals') {
+      const goalsResponse = await fetch(`/api/admin/study-goals?category=${this.studyGoalCategory}`, { credentials: 'same-origin' });
+      const goalResult = await goalsResponse.json();
+      if (!goalsResponse.ok) throw new Error(goalResult.error || 'অধ্যয়নের লক্ষ্য লোড করা যায়নি।');
+      this.studyGoalPlan = goalResult.goals;
+    }
+  },
+
+  async loadStudyGoalCategory(category) {
+    if (!['SSC', 'HSC', 'JOB'].includes(category)) return;
+    try {
+      const response = await fetch(`/api/admin/study-goals?category=${category}`, { credentials: 'same-origin' });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'অধ্যয়নের লক্ষ্য লোড করা যায়নি।');
+      this.studyGoalCategory = category;
+      this.studyGoalPlan = result.goals;
+      const content = document.querySelector('.admin-content-body');
+      if (content) content.innerHTML = this.renderStudyGoalsTab();
+    } catch (error) {
+      Toast.error(error.message || 'অধ্যয়নের লক্ষ্য লোড করা যায়নি।');
+    }
   },
 
   async saveResource(collection, resource) {
@@ -6106,6 +6326,9 @@ const AdminView = window.AdminView = {
             <a href="#/admin/questions" class="admin-nav-item ${activeAdminTab === 'questions' ? 'active' : ''}">
               ${icons.book} <span>ডিজিটাল প্রশ্নব্যাংক (${questions.length})</span>
             </a>
+            <a href="#/admin/study-goals" class="admin-nav-item ${activeAdminTab === 'study-goals' ? 'active' : ''}">
+              ${icons.award} <span>১২ দিনের অধ্যয়ন লক্ষ্য</span>
+            </a>
             <a href="#/admin/exams" class="admin-nav-item ${activeAdminTab === 'exams' ? 'active' : ''}">
               ${icons.award} <span>মডেল টেস্ট ও এক্সাম (${exams.length})</span>
             </a>
@@ -6241,7 +6464,44 @@ const AdminView = window.AdminView = {
     if (tab === 'store-requests') return this.renderPaymentRequestsTab(data.paymentOrders);
     if (tab === 'students') return this.renderStudentsTab(data.users);
     if (tab === 'settings') return this.renderBrandingSettings();
+    if (tab === 'study-goals') return this.renderStudyGoalsTab();
     return this.renderDashboardOverview(data);
+  },
+
+  renderStudyGoalsTab() {
+    return `
+      <section class="card" style="padding: 1.5rem;">
+        <h3 style="margin-bottom: 0.5rem;">শিক্ষার্থীদের ১২ দিনের অধ্যয়ন লক্ষ্য</h3>
+        <p class="text-muted" style="margin-bottom: 1.25rem;">
+          বিভাগ অনুযায়ী লক্ষ্য লিখুন। এই লক্ষ্য শুধু নির্বাচিত বিভাগের শিক্ষার্থীদের দেখানো হবে। প্রতিদিন ৩টি লক্ষ্য থাকবে; আগের দিনের সব লক্ষ্য শেষ না করলে পরের দিনের লক্ষ্য খুলবে না।
+        </p>
+        <label class="form-group" style="max-width: 280px;">
+          <span class="form-label">শিক্ষার্থী বিভাগ</span>
+          <select class="form-input" onchange="window.loadStudyGoalCategory(this.value)">
+            <option value="SSC" ${this.studyGoalCategory === 'SSC' ? 'selected' : ''}>SSC</option>
+            <option value="HSC" ${this.studyGoalCategory === 'HSC' ? 'selected' : ''}>HSC</option>
+            <option value="JOB" ${this.studyGoalCategory === 'JOB' ? 'selected' : ''}>JOB</option>
+          </select>
+        </label>
+        <form id="study-goals-form" onsubmit="window.saveStudyGoals(event)">
+          <div class="study-goals-admin-grid">
+            ${this.studyGoalPlan.map((day, dayIndex) => `
+              <fieldset class="study-goal-day-editor">
+                <legend>দিন ${dayIndex + 1}</legend>
+                ${day.map((goal, goalIndex) => `
+                  <label class="form-group">
+                    <span class="form-label">লক্ষ্য ${goalIndex + 1}</span>
+                    <input class="form-input" name="goal-${dayIndex}-${goalIndex}" maxlength="180"
+                      value="${escapeHtml(goal)}" placeholder="এই দিনের অধ্যয়নের লক্ষ্য লিখুন" required>
+                  </label>
+                `).join('')}
+              </fieldset>
+            `).join('')}
+          </div>
+          <button type="submit" class="btn btn-primary" style="margin-top: 1.25rem;">১২ দিনের লক্ষ্য সংরক্ষণ করুন</button>
+        </form>
+      </section>
+    `;
   },
 
   renderBrandingSettings() {
@@ -7015,8 +7275,11 @@ window.saveNewCourse = async (e) => {
       element: lessonElement,
       title: lessonElement.querySelector('.course-lesson-title').value.trim(),
       videoFile: lessonElement.querySelector('.course-lesson-video').files[0] || null,
+      videoUrl: lessonElement.querySelector('.course-lesson-video-url').value.trim(),
       pdfFile: lessonElement.querySelector('.course-lesson-pdf').files[0] || null,
+      pdfUrl: lessonElement.querySelector('.course-lesson-pdf-url').value.trim(),
       notesPdfFile: lessonElement.querySelector('.course-lesson-notes-pdf').files[0] || null,
+      notesPdfUrl: lessonElement.querySelector('.course-lesson-notes-pdf-url').value.trim(),
       notes: lessonElement.querySelector('.course-lesson-notes').value.trim()
     }))
   }));
@@ -7026,9 +7289,8 @@ window.saveNewCourse = async (e) => {
   }
   if (chapterDrafts.some(chapter => chapter.lessons.some(lesson =>
     !lesson.title ||
-    (!lesson.videoFile && !lesson.pdfFile && !lesson.notesPdfFile && !lesson.notes &&
-      !lesson.element.dataset.videoUrl && !lesson.element.dataset.pdfUrl &&
-      !lesson.element.dataset.notesPdfUrl)
+    (!lesson.videoFile && !lesson.videoUrl && !lesson.pdfFile && !lesson.pdfUrl &&
+      !lesson.notesPdfFile && !lesson.notesPdfUrl && !lesson.notes)
   ))) {
     Toast.error('প্রতিটি Lecture-এ অন্তত Video, PDF অথবা Notes যোগ করুন।');
     return;
@@ -7060,11 +7322,11 @@ window.saveNewCourse = async (e) => {
           title: lessonDraft.title,
           duration: videoAsset ? 'ভিডিও' : (priorLesson?.duration || 'রিসোর্স'),
           type: 'video',
-          videoUrl: videoAsset?.url || element.dataset.videoUrl || '',
+          videoUrl: videoAsset?.url || lessonDraft.videoUrl,
           contentType: videoAsset?.contentType || element.dataset.videoType || '',
-          pdfUrl: pdfAsset?.url || element.dataset.pdfUrl || '',
+          pdfUrl: pdfAsset?.url || lessonDraft.pdfUrl,
           pdfTitle: pdfAsset?.name || element.dataset.pdfTitle || '',
-          notesPdfUrl: notesPdfAsset?.url || element.dataset.notesPdfUrl || '',
+          notesPdfUrl: notesPdfAsset?.url || lessonDraft.notesPdfUrl,
           notesPdfTitle: notesPdfAsset?.name || element.dataset.notesPdfTitle || '',
           notes: lessonDraft.notes,
           isPreview: priorLesson?.isPreview || false
@@ -7765,6 +8027,36 @@ window.publishPdfQuestions = async () => {
     Toast.error(error.message);
   }
 };
+
+window.saveStudyGoals = async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const goals = Array.from({ length: 12 }, (_, dayIndex) =>
+    Array.from({ length: 3 }, (_, goalIndex) =>
+      form.elements.namedItem(`goal-${dayIndex}-${goalIndex}`).value.trim()
+    )
+  );
+  const submitButton = form.querySelector('button[type="submit"]');
+  if (submitButton) submitButton.disabled = true;
+  try {
+    const response = await fetch('/api/admin/study-goals', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category: AdminView.studyGoalCategory, goals })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'অধ্যয়নের লক্ষ্য সংরক্ষণ করা যায়নি।');
+    AdminView.studyGoalPlan = result.goals;
+    Toast.success('১২ দিনের অধ্যয়নের লক্ষ্য সব শিক্ষার্থীর জন্য সংরক্ষিত হয়েছে।');
+  } catch (error) {
+    Toast.error(error.message || 'অধ্যয়নের লক্ষ্য সংরক্ষণ করা যায়নি।');
+  } finally {
+    if (submitButton) submitButton.disabled = false;
+  }
+};
+
+window.loadStudyGoalCategory = category => AdminView.loadStudyGoalCategory(category);
 
 window.resetDatabase = () => {
   if (confirm('আপনি কি সকল ডাটাবেজ প্রাথমিক টেস্ট ডাটাতে রিসেট করতে চান?')) {
@@ -8563,10 +8855,11 @@ class App {
         this.contentEl.innerHTML = await ExamView.renderResult(attemptId);
       } else if (path.startsWith('#/exam/')) {
         const examId = path.replace('#/exam/', '');
-        this.contentEl.innerHTML = ExamView.renderRunner(examId);
+        this.contentEl.innerHTML = await ExamView.renderRunner(examId);
       } else if (path === '#/question-bank') {
         this.contentEl.innerHTML = QuestionBankView.renderList();
       } else if (path === '#/question-bank/practice') {
+        await QuestionBankView.loadFavoriteQuestionIds();
         this.contentEl.innerHTML = QuestionBankView.renderPracticeGenerator();
       } else if (path === '#/ai') {
         const prompt = params.get('prompt') || null;
@@ -8583,6 +8876,7 @@ class App {
         this.contentEl.innerHTML = StoreView.renderCheckout();
       } else if (path === '#/dashboard') {
         this.contentEl.innerHTML = DashboardView.render();
+        if (Auth.getUser()?.role === 'STUDENT') void DashboardView.loadStudyGoals();
       } else if (path === '#/my-courses') {
         this.contentEl.innerHTML = MyCoursesView.render();
       } else if (path === '#/my-exams') {
@@ -8600,7 +8894,7 @@ class App {
         this.contentEl.innerHTML = AuthView.renderResetPassword(params.get('token'));
       } else if (path.startsWith('#/admin')) {
         const sub = path.replace('#/admin/', '').replace('#/admin', '') || 'dashboard';
-        await AdminView.loadFromServer();
+        await AdminView.loadFromServer(sub);
         this.contentEl.innerHTML = AdminView.render(sub);
       } else {
         this.contentEl.innerHTML = `<div class="container text-center" style="padding: 4rem;"><h2>পেজটি পাওয়া যায়নি (404)</h2><a href="#/" class="btn btn-primary" style="margin-top: 1rem;">হোম পেজে যান</a></div>`;

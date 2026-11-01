@@ -10,6 +10,7 @@ import { Toast } from '../utils/toast.js';
 import { Modal } from '../utils/modal.js';
 
 let revealedAnswers = new Set();
+let favoriteQuestionIds = new Set();
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, char => ({
@@ -329,11 +330,12 @@ export const QuestionBankView = {
 
             <div class="form-group">
               <label class="form-label">কঠিনতার মাত্রা (Difficulty)</label>
-              <select id="gen-difficulty" class="form-select">
+              <select id="gen-difficulty" class="form-select" onchange="window.updatePracticeFilters()">
                 <option value="ALL">সকল মাত্রা (সহজ + মাঝারি + কঠিন)</option>
                 <option value="Easy">সহজ (Basic Standard)</option>
                 <option value="Medium">মাঝারি (Board Standard)</option>
                 <option value="Hard">কঠিন (Top College / BCS Advanced)</option>
+                ${user && !Auth.isAdmin() ? '<option value="FAVORITES">ফেভারিট প্রশ্ন</option>' : ''}
               </select>
             </div>
 
@@ -347,6 +349,18 @@ export const QuestionBankView = {
   }
 };
 
+QuestionBankView.loadFavoriteQuestionIds = async () => {
+  const user = Auth.getUser();
+  if (!user || Auth.isAdmin()) {
+    favoriteQuestionIds = new Set();
+    return;
+  }
+  const response = await fetch('/api/student/question-favorites', { credentials: 'same-origin' });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || 'ফেভারিট প্রশ্ন লোড করা যায়নি।');
+  favoriteQuestionIds = new Set(result.questionIds || []);
+};
+
 window.updatePracticeFilters = () => {
   const categorySelect = document.getElementById('gen-category');
   const subjectSelect = document.getElementById('gen-subject');
@@ -357,8 +371,12 @@ window.updatePracticeFilters = () => {
   const category = user && !Auth.isAdmin()
     ? user.educationType
     : categorySelect?.value;
+  const difficulty = document.getElementById('gen-difficulty')?.value || 'ALL';
   const questions = db.getQuestions().filter(question =>
-    question.category === category && (!question.questionType || question.questionType === 'MCQ')
+    question.category === category
+    && (!question.questionType || question.questionType === 'MCQ')
+    && (difficulty !== 'FAVORITES' || favoriteQuestionIds.has(question.id))
+    && (difficulty === 'ALL' || difficulty === 'FAVORITES' || question.difficulty === difficulty)
   );
   const previousSubject = subjectSelect.value;
   const subjects = [...new Set(questions.map(question => question.subject).filter(Boolean))];
@@ -498,14 +516,20 @@ window.generateCustomTest = (e) => {
   const count = parseInt(document.getElementById('gen-count').value, 10) || 10;
   const subject = document.getElementById('gen-subject').value;
   const chapter = document.getElementById('gen-chapter').value;
+  const difficulty = document.getElementById('gen-difficulty').value;
+  const favoritesOnly = difficulty === 'FAVORITES';
   const matchingQuestions = db.getQuestions().filter(question =>
     question.category === cat
     && question.subject === subject
     && (chapter === 'ALL' || question.chapter === chapter)
     && (!question.questionType || question.questionType === 'MCQ')
+    && (!favoritesOnly || favoriteQuestionIds.has(question.id))
+    && (difficulty === 'ALL' || difficulty === 'FAVORITES' || question.difficulty === difficulty)
   );
   if (!matchingQuestions.length) {
-    Toast.error('এই বিষয় ও অধ্যায়ে কোনো প্রশ্ন নেই।');
+    Toast.error(favoritesOnly
+      ? 'নির্বাচিত কঠিনতার এই বিষয় ও অধ্যায়ে কোনো ফেভারিট প্রশ্ন নেই।'
+      : 'এই কঠিনতার বিষয় ও অধ্যায়ে কোনো প্রশ্ন নেই।');
     return;
   }
   const selectedQuestions = matchingQuestions.slice(0, count);

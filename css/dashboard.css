@@ -219,6 +219,74 @@
   border-radius: 4px;
   cursor: pointer;
 }
+
+.study-goal-header,
+.study-energy-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.study-goal-header h3 {
+  margin-bottom: 0.4rem;
+}
+
+.study-energy-button {
+  width: 58px;
+  height: 58px;
+  flex: 0 0 auto;
+  border: 4px solid transparent;
+  border-radius: 50%;
+  background:
+    linear-gradient(var(--bg-surface), var(--bg-surface)) padding-box,
+    conic-gradient(#f59e0b var(--energy-level), var(--border-color) var(--energy-level)) border-box;
+  color: #f59e0b;
+  font-size: 1.65rem;
+  cursor: pointer;
+  filter: drop-shadow(0 2px 3px rgb(245 158 11 / calc(var(--energy-level) / 150)));
+  transition: background 250ms ease, filter 250ms ease, transform 250ms ease;
+}
+
+.study-energy-button:hover {
+  transform: scale(1.06);
+}
+
+.study-energy-info {
+  margin: 0.75rem 0 0.5rem;
+  font-size: 0.82rem;
+}
+
+.study-energy-info span {
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.study-energy-track {
+  height: 9px;
+  margin-bottom: 1rem;
+  overflow: hidden;
+  border-radius: 99px;
+  background: var(--bg-card-subtle);
+}
+
+.study-energy-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #fbbf24, #f97316);
+  transition: width 300ms ease;
+}
+
+.study-goal-day-progress,
+.study-goal-cycle-complete {
+  margin-bottom: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.study-goal-cycle-complete {
+  color: var(--success);
+  font-weight: 700;
+}
 .task-text {
   font-size: 0.9rem;
   font-weight: 500;

@@ -14,7 +14,7 @@ SUPABASE_STORAGE_BUCKET=academy-files
 PUBLIC_APP_URL=http://localhost:3000
 ```
 
-Never commit `.env.local` or expose the service-role key in browser code. `SUPABASE_ANON_KEY` is the public anon/publishable key used for signed browser uploads; never use the service-role key for it. Apply the SQL files in [`supabase/migrations/`](./supabase/migrations/) in numeric order to your Supabase project, then run:
+Never commit `.env.local` or expose the service-role key in browser code. `SUPABASE_ANON_KEY` is the public anon/publishable key used for signed browser uploads; never use the service-role key for it. Apply the SQL files in [`supabase/migrations/`](./supabase/migrations/) in numeric order to your Supabase project. Migrations `0003_study_goals.sql` and `0004_category_study_goals.sql` create separate admin-managed plans and student progress for SSC, HSC, and JOB. Migration `0005_question_favorites.sql` enables student question favorites for exam and custom practice. The previous shared plan is assigned to SSC; configure the HSC and JOB plans separately in the admin panel. Then run:
 
 ```powershell
 npm.cmd install

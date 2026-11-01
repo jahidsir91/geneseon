@@ -221,6 +221,32 @@ async function getSetting(key: string): Promise<JsonObject | null> {
   return (data?.value as JsonObject | undefined) ?? null;
 }
 
+function emptyStudyGoalPlan(): string[][] {
+  return Array.from({ length: 12 }, () => ["", "", ""]);
+}
+
+async function getStudyGoalPlan(category: string): Promise<string[][] | null> {
+  const { data, error } = await supabase.from("study_goal_plans")
+    .select("goals").eq("id", category).maybeSingle();
+  if (error) throw error;
+  const goals = data?.goals;
+  if (!Array.isArray(goals) || goals.length !== 12 || goals.some((day) =>
+    !Array.isArray(day) || day.length !== 3 || day.some((goal) => !text(goal))
+  )) {
+    return null;
+  }
+  return goals.map((day) => day as string[]);
+}
+
+function isCompleteStudyGoalPlan(value: unknown): value is string[][] {
+  return Array.isArray(value) && value.length === 12 && value.every((day) =>
+    Array.isArray(day) && day.length === 3 && day.every((goal) =>
+      text(goal) && Boolean(goal.trim()) && goal.trim().length <= 180 &&
+      !/[\u0000-\u001f]/.test(goal)
+    )
+  );
+}
+
 async function getAsset(assetId: string) {
   const { data, error } = await supabase.from("assets").select("*").eq("id", assetId).maybeSingle();
   if (error) throw error;
@@ -660,6 +686,66 @@ async function getAdminState() {
 }
 
 async function getHandler(request: NextRequest, path: string): Promise<Response> {
+  if (path === "/api/admin/study-goals") {
+    const auth = await requireAdmin(request);
+    if (auth.response) return auth.response;
+    const category = request.nextUrl.searchParams.get("category") ?? "SSC";
+    if (!categories.has(category)) return json({ error: "একটি সঠিক শিক্ষা বিভাগ নির্বাচন করুন।" }, 400);
+    return json({ category, goals: await getStudyGoalPlan(category) ?? emptyStudyGoalPlan() });
+  }
+  if (path === "/api/student/question-favorites") {
+    const user = await requireUser(request);
+    if (!user) return json({ error: "প্রথমে লগইন করুন।" }, 401);
+    if (user.role !== "STUDENT" || !user.educationType || !categories.has(user.educationType)) {
+      return json({ error: "শুধু শিক্ষার্থীরা নিজেদের বিভাগের প্রশ্ন সংরক্ষণ করতে পারবেন।" }, 403);
+    }
+    const { data, error } = await supabase.from("student_question_favorites")
+      .select("question_id").eq("user_id", user.id).eq("category", user.educationType);
+    if (error) throw error;
+    return json({
+      category: user.educationType,
+      questionIds: (data ?? []).map((favorite) => favorite.question_id),
+    });
+  }
+  if (path === "/api/student/study-goals") {
+    const user = await requireUser(request);
+    if (!user) return json({ error: "প্রথমে লগইন করুন।" }, 401);
+    if (user.role !== "STUDENT") return json({ error: "এই লক্ষ্যগুলো শিক্ষার্থী অ্যাকাউন্টের জন্য।" }, 403);
+    const category = user.educationType;
+    if (!category || !categories.has(category)) return json({ error: "আপনার শিক্ষার্থী বিভাগ পাওয়া যায়নি।" }, 403);
+    const goals = await getStudyGoalPlan(category);
+    const { error: createError } = await supabase.from("student_study_goal_cycles")
+      .upsert({ user_id: user.id, category }, { onConflict: "user_id,category", ignoreDuplicates: true });
+    if (createError) throw createError;
+    const { data: cycle, error: cycleError } = await supabase.from("student_study_goal_cycles")
+      .select("cycle,completed_at").eq("user_id", user.id).eq("category", category).single();
+    if (cycleError) throw cycleError;
+    const { data: completions, error: completionError } = await supabase.from("student_study_goal_completions")
+      .select("day_index,goal_index").eq("user_id", user.id).eq("category", category).eq("cycle", cycle.cycle);
+    if (completionError) throw completionError;
+    const completedGoals = (completions ?? []).map((item) => ({
+      dayIndex: item.day_index,
+      goalIndex: item.goal_index,
+    }));
+    const completedCount = completedGoals.length;
+    const currentDay = goals
+      ? Array.from({ length: 12 }, (_, index) => index + 1).find((dayIndex) =>
+        ![0, 1, 2].every((goalIndex) => completedGoals.some((item) =>
+          item.dayIndex === dayIndex && item.goalIndex === goalIndex
+        ))
+      ) ?? 12
+      : 1;
+    return json({
+      goals,
+      category,
+      cycle: cycle.cycle,
+      dayIndex: currentDay,
+      completedGoals,
+      completedCount,
+      energyPercent: cycle.completed_at ? 100 : Math.round(completedCount / 36 * 100),
+      cycleComplete: Boolean(cycle.completed_at),
+    });
+  }
   if (path === "/api/branding") {
     const setting = await getSetting("brand_logo_id");
     return json({ siteName: process.env.GENESEON_SITE_NAME ?? "Medha EdTech", logoUrl: setting?.brand_logo_id ? "/api/branding/logo" : null });
@@ -1353,6 +1439,126 @@ async function postHandler(request: NextRequest, path: string): Promise<Response
     );
   }
   if (path === "/api/auth/register") return register(request, input);
+  if (path === "/api/student/question-favorites") {
+    const user = await requireUser(request);
+    if (!user) return json({ error: "প্রথমে লগইন করুন।" }, 401);
+    if (user.role !== "STUDENT" || !user.educationType || !categories.has(user.educationType)) {
+      return json({ error: "শুধু শিক্ষার্থীরা নিজেদের বিভাগের প্রশ্ন সংরক্ষণ করতে পারবেন।" }, 403);
+    }
+    const questionId = input.questionId;
+    const isFavorite = input.isFavorite;
+    if (!text(questionId) || !questionId.trim() || questionId.length > 200 ||
+        typeof isFavorite !== "boolean") {
+      return json({ error: "প্রশ্নটি সঠিকভাবে নির্বাচন করুন।" }, 400);
+    }
+    const questions = await listResources("questions", user.educationType);
+    const question = questions.find((item) => item.id === questionId);
+    if (!question) return json({ error: "এই প্রশ্নটি আপনার বিভাগের প্রশ্নব্যাংকে নেই।" }, 404);
+    if (isFavorite) {
+      const { error } = await supabase.from("student_question_favorites").upsert({
+        user_id: user.id,
+        question_id: questionId,
+        category: user.educationType,
+      }, { onConflict: "user_id,question_id", ignoreDuplicates: true });
+      if (error) throw error;
+    } else {
+      const { error } = await supabase.from("student_question_favorites")
+        .delete().eq("user_id", user.id).eq("question_id", questionId)
+        .eq("category", user.educationType);
+      if (error) throw error;
+    }
+    return json({ questionId, isFavorite });
+  }
+  if (path === "/api/admin/study-goals") {
+    const auth = await requireAdmin(request);
+    if (auth.response) return auth.response;
+    const category = input.category;
+    if (typeof category !== "string" || !categories.has(category)) {
+      return json({ error: "একটি সঠিক শিক্ষা বিভাগ নির্বাচন করুন।" }, 400);
+    }
+    if (!isCompleteStudyGoalPlan(input.goals)) {
+      return json({ error: "১২ দিনের প্রতিটির জন্য ৩টি লক্ষ্য লিখুন। প্রতিটি লক্ষ্য সর্বোচ্চ ১৮০ অক্ষর হতে পারে।" }, 400);
+    }
+    const goals = input.goals.map((day) => day.map((goal) => goal.trim()));
+    const { error } = await supabase.from("study_goal_plans").upsert({
+      id: category,
+      goals,
+      updated_by: auth.user.id,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "id" });
+    if (error) throw error;
+    return json({ category, goals });
+  }
+  if (path === "/api/student/study-goals/complete" || path === "/api/student/study-goals/next-cycle") {
+    const user = await requireUser(request);
+    if (!user) return json({ error: "প্রথমে লগইন করুন।" }, 401);
+    if (user.role !== "STUDENT") return json({ error: "শুধু শিক্ষার্থী লক্ষ্য সম্পন্ন করতে পারবেন।" }, 403);
+    const category = user.educationType;
+    if (!category || !categories.has(category)) return json({ error: "আপনার শিক্ষার্থী বিভাগ পাওয়া যায়নি।" }, 403);
+    const { data: cycle, error: cycleError } = await supabase.from("student_study_goal_cycles")
+      .select("cycle,completed_at").eq("user_id", user.id).eq("category", category).maybeSingle();
+    if (cycleError) throw cycleError;
+    if (!cycle) return json({ error: "লক্ষ্যের অগ্রগতি লোড করে আবার চেষ্টা করুন।" }, 409);
+
+    if (path === "/api/student/study-goals/next-cycle") {
+      if (!cycle.completed_at) return json({ error: "১২ দিনের লক্ষ্য সম্পূর্ণ হয়নি।" }, 409);
+      const { data: nextCycle, error } = await supabase.from("student_study_goal_cycles")
+        .update({ cycle: cycle.cycle + 1, completed_at: null, updated_at: new Date().toISOString() })
+        .eq("user_id", user.id).eq("category", category).eq("cycle", cycle.cycle).not("completed_at", "is", null)
+        .select("cycle").maybeSingle();
+      if (error) throw error;
+      if (!nextCycle) return json({ error: "নতুন লক্ষ্যচক্র শুরু করা যায়নি। আবার চেষ্টা করুন।" }, 409);
+      return json({ cycle: nextCycle.cycle });
+    }
+
+    const goals = await getStudyGoalPlan(category);
+    if (!goals) return json({ error: "অ্যাডমিন এখনো ১২ দিনের লক্ষ্য সেট করেননি।" }, 409);
+    const dayIndex = input.dayIndex;
+    const goalIndex = input.goalIndex;
+    if (typeof dayIndex !== "number" || !Number.isInteger(dayIndex) || dayIndex < 1 || dayIndex > 12 ||
+        typeof goalIndex !== "number" || !Number.isInteger(goalIndex) || goalIndex < 0 || goalIndex > 2) {
+      return json({ error: "লক্ষ্যটি সঠিকভাবে নির্বাচন করুন।" }, 400);
+    }
+    if (cycle.completed_at) return json({ error: "এই ১২ দিনের লক্ষ্যচক্র ইতোমধ্যে সম্পূর্ণ হয়েছে।" }, 409);
+    const { data: priorCompletions, error: priorError } = await supabase.from("student_study_goal_completions")
+      .select("day_index,goal_index").eq("user_id", user.id).eq("category", category).eq("cycle", cycle.cycle);
+    if (priorError) throw priorError;
+    const currentDay = Array.from({ length: 12 }, (_, index) => index + 1).find((day) =>
+      ![0, 1, 2].every((goal) => (priorCompletions ?? []).some((item) =>
+        item.day_index === day && item.goal_index === goal
+      ))
+    ) ?? 12;
+    if (dayIndex !== currentDay) return json({ error: "আগের দিনের ৩টি লক্ষ্য শেষ করলে পরের দিনের লক্ষ্য খুলবে।" }, 409);
+
+    const { error: completionInsertError } = await supabase.from("student_study_goal_completions").upsert({
+      user_id: user.id,
+      category,
+      cycle: cycle.cycle,
+      day_index: dayIndex,
+      goal_index: goalIndex,
+    }, { onConflict: "user_id,category,cycle,day_index,goal_index", ignoreDuplicates: true });
+    if (completionInsertError) throw completionInsertError;
+    const { data: completions, error: completionsError } = await supabase.from("student_study_goal_completions")
+      .select("day_index,goal_index").eq("user_id", user.id).eq("category", category).eq("cycle", cycle.cycle);
+    if (completionsError) throw completionsError;
+    const completedCount = completions?.length ?? 0;
+    const cycleComplete = completedCount === 36;
+    if (cycleComplete) {
+      const { error: updateError } = await supabase.from("student_study_goal_cycles")
+        .update({ completed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq("user_id", user.id).eq("category", category).eq("cycle", cycle.cycle).is("completed_at", null);
+      if (updateError) throw updateError;
+    }
+    return json({
+      completedGoals: (completions ?? []).map((item) => ({
+        dayIndex: item.day_index,
+        goalIndex: item.goal_index,
+      })),
+      completedCount,
+      energyPercent: cycleComplete ? 100 : Math.round(completedCount / 36 * 100),
+      cycleComplete,
+    });
+  }
   if (path === "/api/auth/login") return login(request, input);
   if (path === "/api/auth/password-reset/request") return requestPasswordReset(request, input);
   if (path === "/api/auth/password-reset/complete") return completePasswordReset(request, input);

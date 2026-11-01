@@ -359,10 +359,11 @@ export class App {
         this.contentEl.innerHTML = await ExamView.renderResult(attemptId);
       } else if (path.startsWith('#/exam/')) {
         const examId = path.replace('#/exam/', '');
-        this.contentEl.innerHTML = ExamView.renderRunner(examId);
+        this.contentEl.innerHTML = await ExamView.renderRunner(examId);
       } else if (path === '#/question-bank') {
         this.contentEl.innerHTML = QuestionBankView.renderList();
       } else if (path === '#/question-bank/practice') {
+        await QuestionBankView.loadFavoriteQuestionIds();
         this.contentEl.innerHTML = QuestionBankView.renderPracticeGenerator();
       } else if (path === '#/ai') {
         const prompt = params.get('prompt') || null;
@@ -379,6 +380,7 @@ export class App {
         this.contentEl.innerHTML = StoreView.renderCheckout();
       } else if (path === '#/dashboard') {
         this.contentEl.innerHTML = DashboardView.render();
+        if (Auth.getUser()?.role === 'STUDENT') void DashboardView.loadStudyGoals();
       } else if (path === '#/my-courses') {
         this.contentEl.innerHTML = MyCoursesView.render();
       } else if (path === '#/my-exams') {
@@ -396,7 +398,7 @@ export class App {
         this.contentEl.innerHTML = AuthView.renderResetPassword(params.get('token'));
       } else if (path.startsWith('#/admin')) {
         const sub = path.replace('#/admin/', '').replace('#/admin', '') || 'dashboard';
-        await AdminView.loadFromServer();
+        await AdminView.loadFromServer(sub);
         this.contentEl.innerHTML = AdminView.render(sub);
       } else {
         this.contentEl.innerHTML = `<div class="container text-center" style="padding: 4rem;"><h2>পেজটি পাওয়া যায়নি (404)</h2><a href="#/" class="btn btn-primary" style="margin-top: 1rem;">হোম পেজে যান</a></div>`;

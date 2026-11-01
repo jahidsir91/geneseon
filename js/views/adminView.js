@@ -418,18 +418,24 @@ function renderCourseEditorLesson(lesson = {}) {
         <input class="form-input course-lesson-title" required maxlength="160" value="${escapeHtml(lesson.title || '')}" placeholder="যেমন: লেকচার ০১ - মৌলিক ধারণা">
       </div>
       <div class="form-group">
-        <label class="form-label">ভিডিও (MP4/WebM/MOV, সর্বোচ্চ ৫ GB)</label>
+        <label class="form-label">ভিডিও আপলোড (MP4/WebM/MOV, সর্বোচ্চ ৫ GB)</label>
         <input type="file" class="form-input course-lesson-video" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov">
+        <label class="form-label" style="margin-top: 0.5rem;">অথবা ভিডিও URL</label>
+        <input type="url" class="form-input course-lesson-video-url" maxlength="2000" value="${escapeHtml(lesson.videoUrl || '')}" placeholder="https://example.com/lecture.mp4">
         ${lesson.videoUrl ? `<small class="text-muted">বর্তমান ভিডিও: <a href="${escapeHtml(lesson.videoUrl)}" target="_blank" rel="noopener">দেখুন</a> (নতুন ফাইল দিলে প্রতিস্থাপিত হবে)</small>` : ''}
       </div>
       <div class="form-group">
-        <label class="form-label">লেকচার PDF (সর্বোচ্চ ১০০ MB)</label>
+        <label class="form-label">লেকচার PDF আপলোড (সর্বোচ্চ ১০০ MB)</label>
         <input type="file" class="form-input course-lesson-pdf" accept="application/pdf,.pdf">
+        <label class="form-label" style="margin-top: 0.5rem;">অথবা লেকচার PDF URL</label>
+        <input type="url" class="form-input course-lesson-pdf-url" maxlength="2000" value="${escapeHtml(pdfUrl)}" placeholder="https://example.com/lecture.pdf">
         ${pdfUrl ? `<small class="text-muted">বর্তমান PDF: <a href="${escapeHtml(pdfUrl)}" target="_blank" rel="noopener">দেখুন</a> (নতুন ফাইল দিলে প্রতিস্থাপিত হবে)</small>` : ''}
       </div>
       <div class="form-group">
-        <label class="form-label">Notes PDF (ঐচ্ছিক, সর্বোচ্চ ১০০ MB)</label>
+        <label class="form-label">Notes PDF আপলোড (ঐচ্ছিক, সর্বোচ্চ ১০০ MB)</label>
         <input type="file" class="form-input course-lesson-notes-pdf" accept="application/pdf,.pdf">
+        <label class="form-label" style="margin-top: 0.5rem;">অথবা Notes PDF URL (ঐচ্ছিক)</label>
+        <input type="url" class="form-input course-lesson-notes-pdf-url" maxlength="2000" value="${escapeHtml(notesPdfUrl)}" placeholder="https://example.com/notes.pdf">
         ${notesPdfUrl ? `<small class="text-muted">বর্তমান Notes PDF: <a href="${escapeHtml(notesPdfUrl)}" target="_blank" rel="noopener">দেখুন</a> (নতুন ফাইল দিলে প্রতিস্থাপিত হবে)</small>` : ''}
       </div>
       <div class="form-group">
@@ -501,7 +507,7 @@ function openCourseEditor(course = null) {
         <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 1.5rem;">
           <div>
             <h4>Chapter ও Lecture কনটেন্ট</h4>
-            <small class="text-muted">প্রতি Lecture-এ ভিডিও, PDF, লিখিত Notes এবং Notes PDF যোগ করুন।</small>
+            <small class="text-muted">প্রতি Lecture-এ ভিডিও ও লেকচার PDF upload বা URL দিয়ে যোগ করুন। Notes PDF ঐচ্ছিক।</small>
           </div>
           <button type="button" class="btn btn-secondary btn-sm" onclick="window.addCourseEditorChapter()">+ Chapter যোগ করুন</button>
         </div>
@@ -519,8 +525,10 @@ export const AdminView = {
   examAttempts: [],
   paymentOrders: [],
   brandingLogoUrl: null,
+  studyGoalPlan: Array.from({ length: 12 }, () => ['', '', '']),
+  studyGoalCategory: 'SSC',
 
-  async loadFromServer() {
+  async loadFromServer(subTab = '') {
     const response = await fetch('/api/admin/state', { credentials: 'same-origin' });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'অ্যাডমিন ডেটা লোড করা যায়নি।');
@@ -529,6 +537,27 @@ export const AdminView = {
     this.paymentOrders = result.paymentOrders || [];
     this.brandingLogoUrl = result.branding?.logoUrl || null;
     db.mergeServerContent(result);
+    if (subTab === 'study-goals') {
+      const goalsResponse = await fetch(`/api/admin/study-goals?category=${this.studyGoalCategory}`, { credentials: 'same-origin' });
+      const goalResult = await goalsResponse.json();
+      if (!goalsResponse.ok) throw new Error(goalResult.error || 'অধ্যয়নের লক্ষ্য লোড করা যায়নি।');
+      this.studyGoalPlan = goalResult.goals;
+    }
+  },
+
+  async loadStudyGoalCategory(category) {
+    if (!['SSC', 'HSC', 'JOB'].includes(category)) return;
+    try {
+      const response = await fetch(`/api/admin/study-goals?category=${category}`, { credentials: 'same-origin' });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'অধ্যয়নের লক্ষ্য লোড করা যায়নি।');
+      this.studyGoalCategory = category;
+      this.studyGoalPlan = result.goals;
+      const content = document.querySelector('.admin-content-body');
+      if (content) content.innerHTML = this.renderStudyGoalsTab();
+    } catch (error) {
+      Toast.error(error.message || 'অধ্যয়নের লক্ষ্য লোড করা যায়নি।');
+    }
   },
 
   async saveResource(collection, resource) {
@@ -697,6 +726,9 @@ export const AdminView = {
             <a href="#/admin/questions" class="admin-nav-item ${activeAdminTab === 'questions' ? 'active' : ''}">
               ${icons.book} <span>ডিজিটাল প্রশ্নব্যাংক (${questions.length})</span>
             </a>
+            <a href="#/admin/study-goals" class="admin-nav-item ${activeAdminTab === 'study-goals' ? 'active' : ''}">
+              ${icons.award} <span>১২ দিনের অধ্যয়ন লক্ষ্য</span>
+            </a>
             <a href="#/admin/exams" class="admin-nav-item ${activeAdminTab === 'exams' ? 'active' : ''}">
               ${icons.award} <span>মডেল টেস্ট ও এক্সাম (${exams.length})</span>
             </a>
@@ -832,7 +864,44 @@ export const AdminView = {
     if (tab === 'store-requests') return this.renderPaymentRequestsTab(data.paymentOrders);
     if (tab === 'students') return this.renderStudentsTab(data.users);
     if (tab === 'settings') return this.renderBrandingSettings();
+    if (tab === 'study-goals') return this.renderStudyGoalsTab();
     return this.renderDashboardOverview(data);
+  },
+
+  renderStudyGoalsTab() {
+    return `
+      <section class="card" style="padding: 1.5rem;">
+        <h3 style="margin-bottom: 0.5rem;">শিক্ষার্থীদের ১২ দিনের অধ্যয়ন লক্ষ্য</h3>
+        <p class="text-muted" style="margin-bottom: 1.25rem;">
+          বিভাগ অনুযায়ী লক্ষ্য লিখুন। এই লক্ষ্য শুধু নির্বাচিত বিভাগের শিক্ষার্থীদের দেখানো হবে। প্রতিদিন ৩টি লক্ষ্য থাকবে; আগের দিনের সব লক্ষ্য শেষ না করলে পরের দিনের লক্ষ্য খুলবে না।
+        </p>
+        <label class="form-group" style="max-width: 280px;">
+          <span class="form-label">শিক্ষার্থী বিভাগ</span>
+          <select class="form-input" onchange="window.loadStudyGoalCategory(this.value)">
+            <option value="SSC" ${this.studyGoalCategory === 'SSC' ? 'selected' : ''}>SSC</option>
+            <option value="HSC" ${this.studyGoalCategory === 'HSC' ? 'selected' : ''}>HSC</option>
+            <option value="JOB" ${this.studyGoalCategory === 'JOB' ? 'selected' : ''}>JOB</option>
+          </select>
+        </label>
+        <form id="study-goals-form" onsubmit="window.saveStudyGoals(event)">
+          <div class="study-goals-admin-grid">
+            ${this.studyGoalPlan.map((day, dayIndex) => `
+              <fieldset class="study-goal-day-editor">
+                <legend>দিন ${dayIndex + 1}</legend>
+                ${day.map((goal, goalIndex) => `
+                  <label class="form-group">
+                    <span class="form-label">লক্ষ্য ${goalIndex + 1}</span>
+                    <input class="form-input" name="goal-${dayIndex}-${goalIndex}" maxlength="180"
+                      value="${escapeHtml(goal)}" placeholder="এই দিনের অধ্যয়নের লক্ষ্য লিখুন" required>
+                  </label>
+                `).join('')}
+              </fieldset>
+            `).join('')}
+          </div>
+          <button type="submit" class="btn btn-primary" style="margin-top: 1.25rem;">১২ দিনের লক্ষ্য সংরক্ষণ করুন</button>
+        </form>
+      </section>
+    `;
   },
 
   renderBrandingSettings() {
@@ -1606,8 +1675,11 @@ window.saveNewCourse = async (e) => {
       element: lessonElement,
       title: lessonElement.querySelector('.course-lesson-title').value.trim(),
       videoFile: lessonElement.querySelector('.course-lesson-video').files[0] || null,
+      videoUrl: lessonElement.querySelector('.course-lesson-video-url').value.trim(),
       pdfFile: lessonElement.querySelector('.course-lesson-pdf').files[0] || null,
+      pdfUrl: lessonElement.querySelector('.course-lesson-pdf-url').value.trim(),
       notesPdfFile: lessonElement.querySelector('.course-lesson-notes-pdf').files[0] || null,
+      notesPdfUrl: lessonElement.querySelector('.course-lesson-notes-pdf-url').value.trim(),
       notes: lessonElement.querySelector('.course-lesson-notes').value.trim()
     }))
   }));
@@ -1617,9 +1689,8 @@ window.saveNewCourse = async (e) => {
   }
   if (chapterDrafts.some(chapter => chapter.lessons.some(lesson =>
     !lesson.title ||
-    (!lesson.videoFile && !lesson.pdfFile && !lesson.notesPdfFile && !lesson.notes &&
-      !lesson.element.dataset.videoUrl && !lesson.element.dataset.pdfUrl &&
-      !lesson.element.dataset.notesPdfUrl)
+    (!lesson.videoFile && !lesson.videoUrl && !lesson.pdfFile && !lesson.pdfUrl &&
+      !lesson.notesPdfFile && !lesson.notesPdfUrl && !lesson.notes)
   ))) {
     Toast.error('প্রতিটি Lecture-এ অন্তত Video, PDF অথবা Notes যোগ করুন।');
     return;
@@ -1651,11 +1722,11 @@ window.saveNewCourse = async (e) => {
           title: lessonDraft.title,
           duration: videoAsset ? 'ভিডিও' : (priorLesson?.duration || 'রিসোর্স'),
           type: 'video',
-          videoUrl: videoAsset?.url || element.dataset.videoUrl || '',
+          videoUrl: videoAsset?.url || lessonDraft.videoUrl,
           contentType: videoAsset?.contentType || element.dataset.videoType || '',
-          pdfUrl: pdfAsset?.url || element.dataset.pdfUrl || '',
+          pdfUrl: pdfAsset?.url || lessonDraft.pdfUrl,
           pdfTitle: pdfAsset?.name || element.dataset.pdfTitle || '',
-          notesPdfUrl: notesPdfAsset?.url || element.dataset.notesPdfUrl || '',
+          notesPdfUrl: notesPdfAsset?.url || lessonDraft.notesPdfUrl,
           notesPdfTitle: notesPdfAsset?.name || element.dataset.notesPdfTitle || '',
           notes: lessonDraft.notes,
           isPreview: priorLesson?.isPreview || false
@@ -2438,6 +2509,36 @@ window.openStudentPasswordResetModal = (userId) => {
     `
   });
 };
+
+window.saveStudyGoals = async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const goals = Array.from({ length: 12 }, (_, dayIndex) =>
+    Array.from({ length: 3 }, (_, goalIndex) =>
+      form.elements.namedItem(`goal-${dayIndex}-${goalIndex}`).value.trim()
+    )
+  );
+  const submitButton = form.querySelector('button[type="submit"]');
+  if (submitButton) submitButton.disabled = true;
+  try {
+    const response = await fetch('/api/admin/study-goals', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category: AdminView.studyGoalCategory, goals })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'অধ্যয়নের লক্ষ্য সংরক্ষণ করা যায়নি।');
+    AdminView.studyGoalPlan = result.goals;
+    Toast.success('১২ দিনের অধ্যয়নের লক্ষ্য সব শিক্ষার্থীর জন্য সংরক্ষিত হয়েছে।');
+  } catch (error) {
+    Toast.error(error.message || 'অধ্যয়নের লক্ষ্য সংরক্ষণ করা যায়নি।');
+  } finally {
+    if (submitButton) submitButton.disabled = false;
+  }
+};
+
+window.loadStudyGoalCategory = category => AdminView.loadStudyGoalCategory(category);
 
 window.submitStudentPasswordReset = async (event, userId) => {
   event.preventDefault();

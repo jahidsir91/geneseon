@@ -470,3 +470,31 @@
   margin-bottom: 0.5rem;
   font-size: 0.875rem;
 }
+.study-goals-admin-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.study-goal-day-editor {
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+}
+
+.study-goal-day-editor legend {
+  padding: 0 0.45rem;
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.study-goal-day-editor .form-group:last-child {
+  margin-bottom: 0;
+}
+
+@media (max-width: 640px) {
+  .study-goals-admin-grid {
+    grid-template-columns: 1fr;
+  }
+}

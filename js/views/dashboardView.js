@@ -8,6 +8,12 @@ import { i18n } from '../i18n.js';
 import { icons, formatBDT } from '../utils/helpers.js';
 import { Toast } from '../utils/toast.js';
 
+function escapeGoalText(value) {
+  return String(value ?? '').replace(/[&<>"']/g, character => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[character]);
+}
+
 export const DashboardView = {
   render() {
     const user = Auth.getUser();
@@ -18,6 +24,23 @@ export const DashboardView = {
     const activeCourse = courses[0];
     const exams = db.getExams().filter(e => e.category === category);
     const attempts = db.getExamAttempts(user.id);
+    const scoredAttempts = attempts.map(attempt => {
+      const percentage = Number.isFinite(Number(attempt.percentage))
+        ? Number(attempt.percentage)
+        : Number(attempt.totalMarks) > 0
+          ? Number(attempt.score) / Number(attempt.totalMarks) * 100
+          : null;
+      return percentage === null ? null : { ...attempt, percentage };
+    }).filter(Boolean);
+    const averageScore = scoredAttempts.length
+      ? Math.round(scoredAttempts.reduce((sum, attempt) => sum + attempt.percentage, 0) / scoredAttempts.length)
+      : 0;
+    const correctAnswers = attempts.reduce((sum, attempt) => sum + (Number(attempt.correct) || 0), 0);
+    const wrongAnswers = attempts.reduce((sum, attempt) => sum + (Number(attempt.wrong) || 0), 0);
+    const answeredQuestions = correctAnswers + wrongAnswers;
+    const accuracy = answeredQuestions
+      ? Math.round(correctAnswers / answeredQuestions * 100)
+      : 0;
 
     // Use Bangladesh time even when the device timezone differs.
     const timeParts = new Intl.DateTimeFormat('en-US', {
@@ -37,29 +60,6 @@ export const DashboardView = {
           : minutes >= 12 * 60
             ? 'শুভ দুপুর'
             : 'শুভ সকাল';
-
-    // Dynamic tasks list based on user category
-    let defaultTasks = [
-      { id: 't1', text: 'পদার্থবিজ্ঞান অধ্যায় ১: ভার্নিয়ার ধ্রুবক লেকচার দেখা', done: true },
-      { id: 't2', text: 'জেনেসিওন একাডেমি প্রশ্নব্যাংক থেকে ২০টি বোর্ড MCQ সমাধান', done: false },
-      { id: 't3', text: 'আজকের সাপ্তাহিক লাইভ মডেল টেস্টে অংশগ্রহণ', done: false },
-      { id: 't4', text: 'দুর্বল টপিক ডায়াগনস্টিক রিপোর্ট রিভিউ করা', done: false }
-    ];
-
-    if (category === 'JOB') {
-      defaultTasks = [
-        { id: 't1', text: 'বাংলা সাহিত্য: প্রাচীন ও মধ্যযুগের চর্যাপদ রিভিশন', done: true },
-        { id: 't2', text: '৪৬তম বিসিএস বাংলাদেশ বিষয়াবলী প্রশ্ন এনালাইসিস', done: false },
-        { id: 't3', text: 'গাণিতিক যুক্তির শতকরা ও লাভ-ক্ষতির শর্টকাট প্র্যাকটিস', done: false },
-        { id: 't4', text: 'ডেইলি আন্তর্জাতিক সাম্প্রতিক সমাচার কুইজ', done: false }
-      ];
-    } else if (category === 'HSC') {
-      defaultTasks = [
-        { id: 't1', text: 'উচ্চতর গণিত: ভেক্টর ডট ও ক্রস গুণনের প্রয়োগ', done: true },
-        { id: 't2', text: 'রসায়ন ২য় পত্র: জৈব যৌগের রূপান্তর চার্ট মুখস্থ', done: false },
-        { id: 't3', text: 'এইচএসসি মেগা মডেল টেস্ট ০১ দেওয়া', done: false }
-      ];
-    }
 
     return `
       <div class="container" style="padding-top: 2rem;">
@@ -138,15 +138,15 @@ export const DashboardView = {
             <!-- Performance Stats Grid -->
             <div class="stats-cards-grid">
               <div class="stat-box">
-                <div class="val">${attempts.length || 6}</div>
+                <div class="val">${attempts.length}</div>
                 <div class="lbl">অংশগ্রহণকৃত পরীক্ষা</div>
               </div>
               <div class="stat-box">
-                <div class="val" style="color: var(--primary);">88.5%</div>
+                <div class="val" style="color: var(--primary);">${averageScore}%</div>
                 <div class="lbl">গড় স্কোর</div>
               </div>
               <div class="stat-box">
-                <div class="val" style="color: var(--success);">94.2%</div>
+                <div class="val" style="color: var(--success);">${accuracy}%</div>
                 <div class="lbl">নির্ভুলতা (Accuracy)</div>
               </div>
             </div>
@@ -177,20 +177,9 @@ export const DashboardView = {
           <!-- Right Column -->
           <div>
             <!-- Today's Study Tasks Checklist -->
-            <div class="tasks-card">
-              <div class="tasks-header">
-                <h3 style="font-size: 1.1rem;">${i18n.t('todaysTasks')}</h3>
-                <span class="badge badge-ssc">আজকের লক্ষ্য</span>
-              </div>
-              <ul class="tasks-list">
-                ${defaultTasks.map(t => `
-                  <li class="task-item ${t.done ? 'completed' : ''}" onclick="this.classList.toggle('completed')">
-                    <input type="checkbox" class="task-checkbox" ${t.done ? 'checked' : ''}>
-                    <span class="task-text">${t.text}</span>
-                  </li>
-                `).join('')}
-              </ul>
-            </div>
+            ${user.role === 'STUDENT' && !isAdminPreview
+              ? '<div id="study-goals-container" class="tasks-card"><p class="text-muted">১২ দিনের অধ্যয়নের লক্ষ্য লোড হচ্ছে...</p></div>'
+              : ''}
 
             <!-- Upcoming Live Exams Widget -->
             <div class="card" style="padding: 1.5rem; margin-bottom: 1.5rem;">
@@ -222,5 +211,114 @@ export const DashboardView = {
         </div>
       </div>
     `;
+  },
+
+  async loadStudyGoals() {
+    const container = document.getElementById('study-goals-container');
+    if (!container) return;
+    try {
+      const response = await fetch('/api/student/study-goals', { credentials: 'same-origin' });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'অধ্যয়নের লক্ষ্য লোড করা যায়নি।');
+      if (!result.goals) {
+        container.innerHTML = `<h3>${escapeGoalText(result.category)} বিভাগের লক্ষ্য</h3><p class="text-muted">অ্যাডমিন এখনো ${escapeGoalText(result.category)} বিভাগের ১২ দিনের অধ্যয়নের লক্ষ্য সেট করেননি।</p>`;
+        return;
+      }
+
+      const completedGoals = result.completedGoals || [];
+      const category = escapeGoalText(result.category);
+      const energy = Number(result.energyPercent) || 0;
+      const dayIndex = Number(result.dayIndex) || 1;
+      const dailyCompleted = completedGoals.filter(goal => goal.dayIndex === dayIndex).length;
+      container.innerHTML = `
+        <div class="study-goal-header">
+          <div>
+            <h3>${category} বিভাগের লক্ষ্য</h3>
+            <span class="badge badge-ssc">দিন ${dayIndex} / ১২</span>
+          </div>
+          <button class="study-energy-button" type="button" style="--energy-level:${energy}%"
+            aria-label="স্টাডি এনার্জি ${energy} শতাংশ" onclick="window.showStudyGoalEnergy(${energy})">⚡</button>
+        </div>
+        <div class="study-energy-info">
+          <strong>১২ দিন study streak</strong>
+          <span>${energy}% এনার্জি • ${result.completedCount || 0}/36 লক্ষ্য</span>
+        </div>
+        <div class="study-energy-track" role="progressbar" aria-valuenow="${energy}" aria-valuemin="0" aria-valuemax="100">
+          <div class="study-energy-fill" style="width:${energy}%"></div>
+        </div>
+        ${result.cycleComplete ? `
+          <p class="study-goal-cycle-complete">১২ দিনের সব লক্ষ্য সম্পন্ন হয়েছে!</p>
+        ` : `
+          <p class="text-muted study-goal-day-progress">${dailyCompleted}/3 লক্ষ্য সম্পন্ন</p>
+          <ul class="tasks-list">
+            ${result.goals[dayIndex - 1].map((goal, goalIndex) => {
+              const isComplete = completedGoals.some(item =>
+                item.dayIndex === dayIndex && item.goalIndex === goalIndex
+              );
+              return `
+                <li class="task-item ${isComplete ? 'completed' : ''}">
+                  <input type="checkbox" class="task-checkbox" ${isComplete ? 'checked disabled' : ''}
+                    aria-label="লক্ষ্য সম্পন্ন করুন"
+                    onchange="window.completeStudyGoal(${dayIndex}, ${goalIndex}, this.checked)">
+                  <span class="task-text">${escapeGoalText(goal)}</span>
+                </li>
+              `;
+            }).join('')}
+          </ul>
+        `}
+      `;
+      if (result.cycleComplete && !document.getElementById('study-goal-congrats-modal')) {
+        window.Modal?.open({
+          title: 'Congrats!',
+          content: '<p id="study-goal-congrats-modal">Congrats. You did good job. Try next 12 days</p>',
+          footer: '<button class="btn btn-primary" type="button" onclick="window.startNextStudyGoalCycle()">Try next 12 days</button>',
+        });
+      }
+    } catch (error) {
+      container.innerHTML = `<p class="text-danger">${escapeGoalText(error.message || 'অধ্যয়নের লক্ষ্য লোড করা যায়নি।')}</p>`;
+    }
+  },
+
+  async completeStudyGoal(dayIndex, goalIndex, checked) {
+    if (!checked) return;
+    try {
+      const response = await fetch('/api/student/study-goals/complete', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dayIndex, goalIndex })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'লক্ষ্যটি সম্পন্ন করা যায়নি।');
+      await this.loadStudyGoals();
+    } catch (error) {
+      Toast.error(error.message || 'লক্ষ্যটি সম্পন্ন করা যায়নি।');
+      await this.loadStudyGoals();
+    }
+  },
+
+  showStudyGoalEnergy(energy) {
+    Toast.info(`তোমার ১২ দিনের স্টাডি এনার্জি এখন ${energy}%।`);
+  },
+
+  async startNextStudyGoalCycle() {
+    try {
+      const response = await fetch('/api/student/study-goals/next-cycle', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'পরের ১২ দিনের লক্ষ্য শুরু করা যায়নি।');
+      window.Modal?.close();
+      await this.loadStudyGoals();
+    } catch (error) {
+      Toast.error(error.message || 'পরের ১২ দিনের লক্ষ্য শুরু করা যায়নি।');
+    }
   }
 };
+
+window.completeStudyGoal = (...args) => DashboardView.completeStudyGoal(...args);
+window.showStudyGoalEnergy = (energy) => DashboardView.showStudyGoalEnergy(energy);
+window.startNextStudyGoalCycle = () => DashboardView.startNextStudyGoalCycle();
