@@ -84,6 +84,72 @@
   font-weight: 500;
 }
 
+.landing-contact-floats {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: calc(20px + env(safe-area-inset-bottom));
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.landing-contact-float {
+  position: relative;
+  display: grid;
+  width: 54px;
+  height: 54px;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  box-shadow: 0 5px 16px rgb(15 23 42 / 25%);
+  pointer-events: auto;
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.landing-contact-float:hover,
+.landing-contact-float:focus-visible {
+  transform: scale(1.08);
+  box-shadow: 0 7px 20px rgb(15 23 42 / 32%);
+}
+
+.landing-contact-float svg {
+  width: 27px;
+  height: 27px;
+  fill: currentColor;
+}
+
+.whatsapp-float {
+  background: #25D366;
+}
+
+.telegram-float {
+  background: #229ED9;
+}
+
+.landing-contact-float::before {
+  position: absolute;
+  right: calc(100% + 10px);
+  padding: 0.35rem 0.65rem;
+  border-radius: 6px;
+  background: #0f172a;
+  color: #fff;
+  content: attr(data-label);
+  font-size: 0.8rem;
+  font-weight: 600;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(4px);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.landing-contact-float:hover::before,
+.landing-contact-float:focus-visible::before {
+  opacity: 1;
+  transform: translateX(0);
+}
+
 /* Category Selection Grid */
 .section-header {
   text-align: center;

@@ -351,6 +351,21 @@ export const LandingView = {
         </div>
       </section>
 
+      <nav class="landing-contact-floats" aria-label="যোগাযোগ">
+        <a class="landing-contact-float whatsapp-float" href="https://wa.me/8801410529594"
+          target="_blank" rel="noopener noreferrer" aria-label="WhatsApp-এ যোগাযোগ করুন" data-label="WhatsApp">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20.5 3.5A11.8 11.8 0 0 0 12.1 0C5.6 0 .3 5.3.3 11.8c0 2.1.6 4.1 1.6 5.9L.2 24l6.5-1.7a11.8 11.8 0 0 0 5.4 1.3h.1c6.5 0 11.8-5.3 11.8-11.8 0-3.1-1.2-6-3.5-8.3ZM12.1 21.6c-1.7 0-3.4-.5-4.8-1.3l-.3-.2-3.9 1 1-3.8-.2-.4a9.7 9.7 0 1 1 8.2 4.7Zm5.3-7.3c-.3-.2-1.7-.9-2-1s-.5-.2-.7.2c-.2.3-.8 1-1 1.2-.2.2-.4.2-.7.1-.3-.2-1.2-.4-2.3-1.4-.8-.7-1.4-1.7-1.6-2-.2-.4 0-.5.1-.7l.5-.6.3-.5c.1-.2 0-.4 0-.6l-.9-2.1c-.2-.5-.5-.4-.7-.4H7.8c-.2 0-.6.1-.9.4-.3.4-1.1 1.1-1.1 2.6s1.1 3 1.2 3.2c.2.2 2.2 3.4 5.4 4.7.7.3 1.2.5 1.6.6.7.2 1.3.2 1.8.1.6-.1 1.7-.7 2-1.4.2-.7.2-1.3.2-1.4-.1-.2-.3-.3-.6-.5Z"/>
+          </svg>
+        </a>
+        <a class="landing-contact-float telegram-float" href="https://t.me/geneseon"
+          target="_blank" rel="noopener noreferrer" aria-label="Telegram-এ যোগ দিন" data-label="Telegram">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M23.5 3.4 20 20c-.3 1.2-1 1.5-2 .9l-5.4-4-2.6 2.5c-.3.3-.5.5-1 .5l.4-5.5 10-9c.4-.4-.1-.6-.6-.2L6.5 13 1.2 11.4C0 11-.1 10.2 1.5 9.6L22 1.7c1-.4 1.9.2 1.5 1.7Z"/>
+          </svg>
+        </a>
+      </nav>
+
       <!-- Footer -->
       <footer class="main-footer">
         <div class="container">
