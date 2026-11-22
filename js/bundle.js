@@ -5645,6 +5645,15 @@ function escapeHtml(value) {
   })[char]);
 }
 
+function formatDateTimeLocal(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 16);
+}
+
 function renderAdminMCQEntry(question = null, index = 0, removable = true) {
   const options = question?.options || [];
   return `
@@ -6530,8 +6539,9 @@ const AdminView = window.AdminView = {
     `;
   },
 
-  renderExamQuestionOptions() {
+  renderExamQuestionOptions(selectedQuestionIds = []) {
     const questions = db.getQuestions();
+    const selectedIds = new Set(selectedQuestionIds);
     const categories = [...new Set([
       'SSC',
       'HSC',
@@ -6559,7 +6569,7 @@ const AdminView = window.AdminView = {
                     <summary>${type} <span class="exam-question-count">${typedQuestions.length}টি</span></summary>
                     ${typedQuestions.map(question => `
                       <label class="exam-question-choice">
-                        <input type="checkbox" name="exam-question" value="${escapeHtml(question.id)}" data-category="${escapeHtml(question.category)}">
+                        <input type="checkbox" name="exam-question" value="${escapeHtml(question.id)}" data-category="${escapeHtml(question.category)}" ${selectedIds.has(question.id) ? 'checked' : ''}>
                         <span>${escapeHtml(type === 'CQ'
                           ? `উদ্দীপক: ${question.stimulus || (question.parts || []).map(part => part.question).join(' ')}`
                           : question.text)}</span>
@@ -6960,9 +6970,9 @@ const AdminView = window.AdminView = {
             <tbody>
               ${exams.map(e => `
                 <tr>
-                  <td><strong>${e.title}</strong></td>
-                  <td><span class="badge badge-${e.category.toLowerCase()}">${e.category}</span></td>
-                  <td>${e.subject}</td>
+                  <td><strong>${escapeHtml(e.title)}</strong></td>
+                  <td><span class="badge badge-${escapeHtml(e.category.toLowerCase())}">${escapeHtml(e.category)}</span></td>
+                  <td>${escapeHtml(e.subject)}</td>
                   <td>${e.totalQuestions} টি</td>
                   <td>${e.durationMinutes} মিনিট</td>
                   <td>${e.totalMarks} মার্কস</td>
@@ -6970,8 +6980,9 @@ const AdminView = window.AdminView = {
                   <td>${e.startAt ? new Date(e.startAt).toLocaleString('bn-BD') : 'এখনই'}</td>
                   <td>
                     <div style="display: flex; gap: 0.35rem;">
-                      <a href="#/exam/${e.id}" class="btn btn-secondary btn-sm">টেস্ট দিন</a>
-                      <button class="btn btn-danger btn-sm" onclick="window.deleteExamAdmin('${e.id}')">${icons.trash}</button>
+                      <a href="#/exam/${encodeURIComponent(e.id)}" class="btn btn-secondary btn-sm">টেস্ট দিন</a>
+                      <button class="btn btn-primary btn-sm" onclick="window.openEditExamModal('${escapeHtml(e.id)}')">${icons.edit} সম্পাদনা</button>
+                      <button class="btn btn-danger btn-sm" onclick="window.deleteExamAdmin('${escapeHtml(e.id)}')">${icons.trash}</button>
                     </div>
                   </td>
                 </tr>
@@ -7539,57 +7550,74 @@ window.deleteCourseAdmin = async (id) => {
   }
 };
 
-window.openCreateExamModal = () => {
+window.openCreateExamModal = (exam = null) => {
+  const isEditing = Boolean(exam);
   Modal.open({
-    title: 'মডেল টেস্ট তৈরি ও সিডিউল',
+    title: isEditing ? 'মডেল টেস্ট সম্পাদনা' : 'মডেল টেস্ট তৈরি ও সিডিউল',
     maxWidth: '700px',
     content: `
       <form id="create-exam-form" onsubmit="window.saveNewExam(event)">
+        <input id="new-exam-id" type="hidden" value="${escapeHtml(exam?.id || '')}">
         <div class="form-group">
           <label class="form-label">পরীক্ষার নাম *</label>
-          <input id="new-exam-title" class="form-input" required>
+          <input id="new-exam-title" class="form-input" required value="${escapeHtml(exam?.title || '')}">
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
           <div class="form-group">
             <label class="form-label">সময় (মিনিট) *</label>
-            <input id="new-exam-duration" type="number" min="1" max="600" class="form-input" required value="60">
+            <input id="new-exam-duration" type="number" min="1" max="600" class="form-input" required value="${escapeHtml(exam?.durationMinutes ?? 60)}">
           </div>
           <div class="form-group">
             <label class="form-label">পূর্ণমান *</label>
-            <input id="new-exam-marks" type="number" min="1" max="1000" class="form-input" required value="50">
+            <input id="new-exam-marks" type="number" min="1" max="1000" class="form-input" required value="${escapeHtml(exam?.totalMarks ?? 50)}">
           </div>
           <div class="form-group">
             <label class="form-label">CQ-এর মোট নম্বর (CQ থাকলে)</label>
-            <input id="new-exam-cq-marks" type="number" min="1" max="1000" class="form-input" value="20">
+            <input id="new-exam-cq-marks" type="number" min="1" max="1000" class="form-input" value="${escapeHtml(exam?.cqTotalMarks || 20)}">
           </div>
           <div class="form-group">
             <label class="form-label">নেগেটিভ মার্কিং / ভুল উত্তরে</label>
-            <input id="new-exam-negative" type="number" min="0" max="10" step="0.01" class="form-input" value="0.25">
+            <input id="new-exam-negative" type="number" min="0" max="10" step="0.01" class="form-input" value="${escapeHtml(exam?.negativeMarking ?? 0.25)}">
           </div>
           <div class="form-group">
             <label class="form-label">পরীক্ষা শুরু (ঐচ্ছিক)</label>
-            <input id="new-exam-start" type="datetime-local" class="form-input">
+            <input id="new-exam-start" type="datetime-local" class="form-input" value="${formatDateTimeLocal(exam?.startAt)}">
           </div>
           <div class="form-group">
             <label class="form-label">পরীক্ষা শেষ (ঐচ্ছিক)</label>
-            <input id="new-exam-end" type="datetime-local" class="form-input">
+            <input id="new-exam-end" type="datetime-local" class="form-input" value="${formatDateTimeLocal(exam?.endAt)}">
           </div>
         </div>
         <div class="form-group">
           <label class="form-label">প্রশ্নব্যাংক থেকে প্রশ্ন নির্বাচন করুন *</label>
           <div id="new-exam-questions" class="exam-question-picker">
-            ${AdminView.renderExamQuestionOptions()}
+            ${AdminView.renderExamQuestionOptions(exam?.questionIds || [])}
           </div>
           <small class="text-muted">প্রথমে SSC, HSC বা Job খুলুন, তারপর Subject → Chapter → MCQ/CQ থেকে প্রশ্ন বেছে নিন। একটি পরীক্ষায় একই ক্যাটাগরির প্রশ্ন নির্বাচন করুন। CQ থাকলে শিক্ষার্থী PDF জমা দেবে; CQ নম্বর আলাদা করে দিন, বাকি নম্বর MCQ-তে সমানভাবে ভাগ হবে। শুধু CQ হলে CQ নম্বরই পূর্ণমান হতে হবে।</small>
         </div>
-        <button type="submit" class="btn btn-primary btn-block">মডেল টেস্ট সংরক্ষণ করুন</button>
+        <button type="submit" class="btn btn-primary btn-block">${isEditing ? 'পরিবর্তন সংরক্ষণ করুন' : 'মডেল টেস্ট সংরক্ষণ করুন'}</button>
       </form>
     `
   });
 };
 
+window.openEditExamModal = (id) => {
+  const exam = db.getExamById(id);
+  if (!exam) {
+    Toast.error('পরীক্ষাটি পাওয়া যায়নি।');
+    return;
+  }
+  window.openCreateExamModal(exam);
+};
+
 window.saveNewExam = async (event) => {
   event.preventDefault();
+  const examId = document.getElementById('new-exam-id').value;
+  const existingExam = examId ? db.getExamById(examId) : null;
+  if (examId && !existingExam) {
+    Toast.error('সম্পাদনার জন্য পরীক্ষাটি পাওয়া যায়নি। পেজ রিফ্রেশ করে আবার চেষ্টা করুন।');
+    return;
+  }
   const selectedQuestions = [...document.querySelectorAll('#new-exam-questions input[name="exam-question"]:checked')]
     .map(input => db.getQuestionById(input.value))
     .filter(Boolean);
@@ -7632,7 +7660,7 @@ window.saveNewExam = async (event) => {
     return;
   }
   const exam = {
-    id: uid('exam'),
+    id: existingExam?.id || uid('exam'),
     title: document.getElementById('new-exam-title').value.trim(),
     category,
     subject: [...new Set(selectedQuestions.map(question => question.subject))].join(', '),
@@ -7645,12 +7673,12 @@ window.saveNewExam = async (event) => {
     negativeMarking: Number(document.getElementById('new-exam-negative').value) || 0,
     startAt,
     endAt,
-    accessType: 'free',
-    isLive: true
+    accessType: existingExam?.accessType || 'free',
+    isLive: existingExam ? existingExam.isLive !== false : true
   };
   try {
     await AdminView.saveResource('exams', exam);
-    Toast.success('মডেল টেস্ট ও সময়সূচি সংরক্ষণ হয়েছে।');
+    Toast.success(existingExam ? 'মডেল টেস্টের পরিবর্তন সংরক্ষণ হয়েছে।' : 'মডেল টেস্ট ও সময়সূচি সংরক্ষণ হয়েছে।');
     Modal.close();
     const content = document.getElementById('main-content');
     if (content) content.innerHTML = AdminView.render('exams');
