@@ -26,6 +26,119 @@ function escapeHtml(value) {
   })[char]);
 }
 
+function renderAdminMCQEntry(question = null, index = 0, removable = true) {
+  const options = question?.options || [];
+  return `
+    <section class="admin-mcq-entry admin-question-entry" data-question-entry>
+      <header class="admin-mcq-entry-header">
+        <strong>প্রশ্ন <span data-question-number>${index + 1}</span></strong>
+        ${removable ? '<button type="button" class="btn btn-ghost btn-sm" onclick="window.removeAdminQuestionEntry(this)" aria-label="এই প্রশ্নটি বাদ দিন">বাদ দিন</button>' : ''}
+      </header>
+      <div class="form-group">
+        <label class="form-label">উদ্দীপক (ঐচ্ছিক)</label>
+        <textarea class="form-textarea new-q-mcq-stimulus" placeholder="প্রশ্নের উদ্দীপক থাকলে লিখুন">${escapeHtml(question?.stimulus || '')}</textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">MCQ প্রশ্ন বাক্য *</label>
+        <input type="text" class="form-input new-q-mcq-text" required placeholder="যেমন: চর্যাপদের আবিষ্কারক কে?" value="${escapeHtml(question?.text || '')}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">প্রশ্নের ছবি (ঐচ্ছিক, সর্বোচ্চ ৫ MB)</label>
+        <input type="file" class="form-input new-q-mcq-image" aria-label="প্রশ্নের ছবি নির্বাচন করুন" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp">
+        <small class="text-muted">PNG, JPG বা WebP।</small>
+        ${question?.imageUrl ? '<small class="text-muted">বর্তমান ছবি সংরক্ষিত আছে; নতুন ছবি নির্বাচন করলে প্রতিস্থাপিত হবে।</small>' : ''}
+      </div>
+      <div class="admin-mcq-options">
+        ${['ক', 'খ', 'গ', 'ঘ'].map((label, optionIndex) => `
+          <label>
+            <span>অপশন ${label}</span>
+            <input type="text" class="form-input new-q-mcq-option" required placeholder="অপশন ${label}" value="${escapeHtml(options[optionIndex] || '')}">
+          </label>
+        `).join('')}
+      </div>
+      <div class="form-group">
+        <label class="form-label">সঠিক অপশন</label>
+        <select class="form-select new-q-mcq-correct">
+          ${['অপশন ক', 'অপশন খ', 'অপশন গ', 'অপশন ঘ'].map((label, optionIndex) => `
+            <option value="${optionIndex}" ${question?.correctIndex === optionIndex ? 'selected' : ''}>${label}</option>
+          `).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">ব্যাখ্যা ও সমাধান</label>
+        <textarea class="form-textarea new-q-mcq-explanation" placeholder="ব্যাখ্যা লিখুন...">${escapeHtml(question?.explanation || '')}</textarea>
+      </div>
+    </section>
+  `;
+}
+
+function renderAdminCQEntry(question = null, index = 0, removable = true) {
+  return `
+    <section class="admin-question-entry" data-question-entry>
+      <header class="admin-mcq-entry-header">
+        <strong>CQ <span data-question-number>${index + 1}</span></strong>
+        ${removable ? '<button type="button" class="btn btn-ghost btn-sm" onclick="window.removeAdminQuestionEntry(this)" aria-label="এই CQ-টি বাদ দিন">বাদ দিন</button>' : ''}
+      </header>
+      <div class="form-group">
+        <label class="form-label">উদ্দীপক *</label>
+        <textarea class="form-textarea new-q-cq-stimulus" placeholder="উদ্দীপক লিখুন">${escapeHtml(question?.stimulus || '')}</textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">উদ্দীপকের ছবি (ঐচ্ছিক, সর্বোচ্চ ৫ MB)</label>
+        <input type="file" class="form-input new-q-cq-image" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp">
+        <small class="text-muted">উদ্দীপকের লেখার নিচে ছবিটি দেখানো হবে। PNG, JPG বা WebP।</small>
+        ${question?.stimulusImageUrl ? '<small class="text-muted">বর্তমান ছবি সংরক্ষিত আছে; নতুন ছবি নির্বাচন করলে প্রতিস্থাপিত হবে।</small>' : ''}
+      </div>
+      ${['ক', 'খ', 'গ', 'ঘ'].map((label, partIndex) => `
+        <fieldset class="admin-cq-part">
+          <legend>${label})</legend>
+          <div class="form-group">
+            <label class="form-label">প্রশ্ন *</label>
+            <textarea class="form-textarea new-q-cq-part-question" placeholder="${label})-এর প্রশ্ন">${escapeHtml(question?.parts?.[partIndex]?.question || '')}</textarea>
+          </div>
+          <div class="form-group">
+            <label class="form-label">উত্তর (ঐচ্ছিক)</label>
+            <textarea class="form-textarea new-q-cq-part-answer" placeholder="উত্তর/সমাধান">${escapeHtml(question?.parts?.[partIndex]?.answer || '')}</textarea>
+          </div>
+        </fieldset>
+      `).join('')}
+    </section>
+  `;
+}
+
+function renderAdminWrittenEntry(question = null, index = 0, removable = true) {
+  return `
+    <section class="admin-question-entry" data-question-entry>
+      <header class="admin-mcq-entry-header">
+        <strong>Written <span data-question-number>${index + 1}</span></strong>
+        ${removable ? '<button type="button" class="btn btn-ghost btn-sm" onclick="window.removeAdminQuestionEntry(this)" aria-label="এই প্রশ্নটি বাদ দিন">বাদ দিন</button>' : ''}
+      </header>
+      <div class="form-group">
+        <label class="form-label">Written প্রশ্ন *</label>
+        <textarea class="form-textarea new-q-written-question" placeholder="লিখিত প্রশ্ন লিখুন">${escapeHtml(question?.text || '')}</textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">প্রশ্নের ছবি (ঐচ্ছিক, সর্বোচ্চ ৫ MB)</label>
+        <input type="file" class="form-input new-q-written-image" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp">
+        <small class="text-muted">PNG, JPG বা WebP।</small>
+        ${question?.imageUrl ? '<small class="text-muted">বর্তমান ছবি সংরক্ষিত আছে; নতুন ছবি নির্বাচন করলে প্রতিস্থাপিত হবে।</small>' : ''}
+      </div>
+      <div class="form-group">
+        <label class="form-label">উত্তর / নমুনা সমাধান (ঐচ্ছিক)</label>
+        <textarea class="form-textarea new-q-written-answer" placeholder="উত্তর বা নমুনা সমাধান লিখুন">${escapeHtml(question?.answer || '')}</textarea>
+      </div>
+    </section>
+  `;
+}
+
+function removeSavedQuestionEntry(entry) {
+  const entries = entry.parentElement;
+  entry.remove();
+  entries.querySelectorAll('[data-question-number]').forEach((number, index) => {
+    number.textContent = String(index + 1);
+  });
+}
+
 let localPdfOcrLibraries;
 let lastLocalPdfOcrText = '';
 
@@ -386,6 +499,7 @@ function renderAdminQuestionTypeGroups(questions, category) {
                     ${(question.parts || []).map(part => `<li><strong>${escapeHtml(part.label)})</strong> ${escapeHtml(part.question || '')}</li>`).join('')}
                   </ol>
                 ` : `
+                  ${question.stimulus ? `<p class="cq-stimulus"><span>উদ্দীপক:</span> ${escapeHtml(question.stimulus)}</p>` : ''}
                   <strong>${index + 1}. ${escapeHtml(question.text)}</strong>
                   ${question.imageUrl ? `<img src="${escapeHtml(question.imageUrl)}" alt="প্রশ্নের ছবি" loading="lazy" style="display: block; max-width: 100%; max-height: 240px; object-fit: contain; margin: 0.5rem 0; border-radius: var(--radius-md);">` : ''}
                   ${question.questionType === 'WRITTEN' && question.answer ? `<p>উত্তর: ${escapeHtml(question.answer)}</p>` : ''}
@@ -1961,9 +2075,6 @@ window.filterAdminUsers = (category) => {
 window.openCreateQuestionModal = (question = null) => {
   const hierarchyFields = question ? getQuestionHierarchyFields(question) : {};
   const questionType = question?.questionType || 'MCQ';
-  const currentImageUrl = question?.questionType === 'CQ'
-    ? question.stimulusImageUrl
-    : question?.imageUrl;
   Modal.open({
     title: question ? 'প্রশ্ন সম্পাদনা করুন' : 'প্রশ্নব্যাংকে নতুন প্রশ্ন যোগ করুন',
     maxWidth: '650px',
@@ -2013,77 +2124,35 @@ window.openCreateQuestionModal = (question = null) => {
             <input type="number" id="new-q-year" class="form-input" min="1900" max="2100" placeholder="যেমন: 2025" value="${escapeHtml(question?.year || '')}">
           </div>
         </div>
-        <div id="new-q-mcq-fields">
-          <div id="new-q-mcq-question" class="form-group">
-            <label class="form-label">MCQ প্রশ্ন বাক্য *</label>
-            <input type="text" id="new-q-text" class="form-input" required placeholder="যেমন: চর্যাপদের আবিষ্কারক কে?" value="${escapeHtml(question?.text || '')}">
+        <div id="new-q-mcq-fields" hidden>
+          <div id="new-q-mcq-entries">
+            ${renderAdminMCQEntry(questionType === 'MCQ' ? question : null, 0, !question)}
           </div>
-          <div id="new-q-mcq-image-group" class="form-group">
-            <label class="form-label" for="new-q-image">প্রশ্নের ছবি (ঐচ্ছিক, সর্বোচ্চ ৫ MB)</label>
-            <input type="file" id="new-q-image" class="form-input" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp">
-            <small class="text-muted">প্রশ্নের ছবিটি অপশনের আগে দেখানো হবে। PNG, JPG বা WebP।</small>
-            ${currentImageUrl && question?.questionType !== 'CQ' ? `<small class="text-muted">বর্তমান ছবি সংরক্ষিত আছে; নতুন ছবি নির্বাচন করলে প্রতিস্থাপিত হবে।</small>` : ''}
-          </div>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin-bottom: 1rem;">
-            <input type="text" id="new-q-opt0" class="form-input" required placeholder="অপশন ক" value="${escapeHtml(question?.options?.[0] || '')}">
-            <input type="text" id="new-q-opt1" class="form-input" required placeholder="অপশন খ" value="${escapeHtml(question?.options?.[1] || '')}">
-            <input type="text" id="new-q-opt2" class="form-input" required placeholder="অপশন গ" value="${escapeHtml(question?.options?.[2] || '')}">
-            <input type="text" id="new-q-opt3" class="form-input" required placeholder="অপশন ঘ" value="${escapeHtml(question?.options?.[3] || '')}">
-          </div>
-          <div class="form-group">
-            <label class="form-label">সঠিক অপশন</label>
-            <select id="new-q-correct" class="form-select">
-              <option value="0" ${question?.correctIndex === 0 ? 'selected' : ''}>অপশন ক</option>
-              <option value="1" ${question?.correctIndex === 1 ? 'selected' : ''}>অপশন খ</option>
-              <option value="2" ${question?.correctIndex === 2 ? 'selected' : ''}>অপশন গ</option>
-              <option value="3" ${question?.correctIndex === 3 ? 'selected' : ''}>অপশন ঘ</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="form-label">ব্যাখ্যা ও সমাধান</label>
-            <textarea id="new-q-exp" class="form-textarea" placeholder="ব্যাখ্যা লিখুন...">${escapeHtml(question?.explanation || '')}</textarea>
-          </div>
+          ${question ? '' : `
+            <button type="button" class="btn btn-secondary btn-sm" onclick="window.addAdminMCQEntry()" style="margin-bottom: 1rem;">
+              ${icons.plus} আরেকটি MCQ যোগ করুন
+            </button>
+          `}
         </div>
         <div id="new-q-cq-fields" hidden>
-          <div class="form-group">
-            <label class="form-label" for="new-q-stimulus">উদ্দীপক *</label>
-            <textarea id="new-q-stimulus" class="form-textarea" placeholder="উদ্দীপক লিখুন">${escapeHtml(question?.stimulus || '')}</textarea>
+          <div id="new-q-cq-entries">
+            ${renderAdminCQEntry(questionType === 'CQ' ? question : null, 0, !question)}
           </div>
-          <div class="form-group">
-            <label class="form-label" for="new-q-stimulus-image">উদ্দীপকের ছবি (ঐচ্ছিক, সর্বোচ্চ ৫ MB)</label>
-            <input type="file" id="new-q-stimulus-image" class="form-input" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp">
-            <small class="text-muted">উদ্দীপকের লেখার নিচে ছবিটি দেখানো হবে। PNG, JPG বা WebP।</small>
-            ${currentImageUrl && question?.questionType === 'CQ' ? `<small class="text-muted">বর্তমান ছবি সংরক্ষিত আছে; নতুন ছবি নির্বাচন করলে প্রতিস্থাপিত হবে।</small>` : ''}
-          </div>
-          ${['ক', 'খ', 'গ', 'ঘ'].map((label, index) => `
-            <fieldset class="admin-cq-part">
-              <legend>${label})</legend>
-              <div class="form-group">
-                <label class="form-label" for="new-q-part-${index}">প্রশ্ন *</label>
-                <textarea id="new-q-part-${index}" class="form-textarea" placeholder="${label})-এর প্রশ্ন">${escapeHtml(question?.parts?.[index]?.question || '')}</textarea>
-              </div>
-              <div class="form-group">
-                <label class="form-label" for="new-q-answer-${index}">উত্তর (ঐচ্ছিক)</label>
-                <textarea id="new-q-answer-${index}" class="form-textarea" placeholder="উত্তর/সমাধান">${escapeHtml(question?.parts?.[index]?.answer || '')}</textarea>
-              </div>
-            </fieldset>
-          `).join('')}
+          ${question ? '' : `
+            <button type="button" class="btn btn-secondary btn-sm" onclick="window.addAdminQuestionEntry('CQ')" style="margin-bottom: 1rem;">
+              ${icons.plus} আরেকটি CQ যোগ করুন
+            </button>
+          `}
         </div>
         <div id="new-q-written-fields" hidden>
-          <div class="form-group">
-            <label class="form-label" for="new-q-written-question">Written প্রশ্ন *</label>
-            <textarea id="new-q-written-question" class="form-textarea" placeholder="লিখিত প্রশ্ন লিখুন">${escapeHtml(question?.text || '')}</textarea>
+          <div id="new-q-written-entries">
+            ${renderAdminWrittenEntry(questionType === 'WRITTEN' ? question : null, 0, !question)}
           </div>
-          <div class="form-group">
-            <label class="form-label" for="new-q-written-image">প্রশ্নের ছবি (ঐচ্ছিক, সর্বোচ্চ ৫ MB)</label>
-            <input type="file" id="new-q-written-image" class="form-input" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp">
-            <small class="text-muted">Written প্রশ্নের সঙ্গে PNG, JPG বা WebP ছবি যোগ করতে পারবেন।</small>
-            ${currentImageUrl && question?.questionType === 'WRITTEN' ? `<small class="text-muted">বর্তমান ছবি সংরক্ষিত আছে; নতুন ছবি নির্বাচন করলে প্রতিস্থাপিত হবে।</small>` : ''}
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="new-q-written-answer">উত্তর / নমুনা সমাধান (ঐচ্ছিক)</label>
-            <textarea id="new-q-written-answer" class="form-textarea" placeholder="উত্তর বা নমুনা সমাধান লিখুন">${escapeHtml(question?.answer || '')}</textarea>
-          </div>
+          ${question ? '' : `
+            <button type="button" class="btn btn-secondary btn-sm" onclick="window.addAdminQuestionEntry('WRITTEN')" style="margin-bottom: 1rem;">
+              ${icons.plus} আরেকটি Written প্রশ্ন যোগ করুন
+            </button>
+          `}
         </div>
         <button type="submit" class="btn btn-primary btn-block">${question ? 'পরিবর্তনগুলো সংরক্ষণ করুন' : 'সংরক্ষণ করুন'}</button>
       </form>
@@ -2116,22 +2185,53 @@ window.updateNewQuestionTypeFields = () => {
   const mcqFields = document.getElementById('new-q-mcq-fields');
   const cqFields = document.getElementById('new-q-cq-fields');
   const writtenFields = document.getElementById('new-q-written-fields');
-  const questionText = document.getElementById('new-q-text');
-  const stimulus = document.getElementById('new-q-stimulus');
-  const writtenQuestion = document.getElementById('new-q-written-question');
-  if (!mcqFields || !cqFields || !writtenFields || !questionText || !stimulus || !writtenQuestion) return;
+  if (!mcqFields || !cqFields || !writtenFields) return;
 
   mcqFields.hidden = isCQ || isWritten;
   cqFields.hidden = !isCQ;
   writtenFields.hidden = !isWritten;
-  questionText.required = !isCQ && !isWritten;
-  stimulus.required = isCQ;
-  writtenQuestion.required = isWritten;
-  document.querySelectorAll('[id^="new-q-opt"]').forEach(field => {
-    if (field instanceof HTMLInputElement) field.required = !isCQ && !isWritten && field.id !== 'new-q-correct';
+  mcqFields.querySelectorAll('.new-q-mcq-text, .new-q-mcq-option').forEach(field => {
+    field.required = !isCQ && !isWritten;
   });
-  ['0', '1', '2', '3'].forEach(index => {
-    document.getElementById(`new-q-part-${index}`).required = isCQ;
+  cqFields.querySelectorAll('.new-q-cq-stimulus, .new-q-cq-part-question').forEach(field => {
+    field.required = isCQ;
+  });
+  writtenFields.querySelectorAll('.new-q-written-question').forEach(field => {
+    field.required = isWritten;
+  });
+};
+
+window.addAdminMCQEntry = () => {
+  const entries = document.getElementById('new-q-mcq-entries');
+  if (!entries) return;
+  const index = entries.querySelectorAll('[data-question-entry]').length;
+  entries.insertAdjacentHTML('beforeend', renderAdminMCQEntry(null, index));
+  window.updateNewQuestionTypeFields();
+};
+
+window.addAdminQuestionEntry = (type) => {
+  const config = {
+    CQ: { id: 'new-q-cq-entries', render: renderAdminCQEntry },
+    WRITTEN: { id: 'new-q-written-entries', render: renderAdminWrittenEntry }
+  }[type];
+  const entries = config && document.getElementById(config.id);
+  if (!entries) return;
+  const index = entries.querySelectorAll('[data-question-entry]').length;
+  entries.insertAdjacentHTML('beforeend', config.render(null, index));
+  window.updateNewQuestionTypeFields();
+};
+
+window.removeAdminQuestionEntry = (button) => {
+  const entries = button.closest('[id$="-entries"]');
+  if (!entries) return;
+  const questions = entries.querySelectorAll('[data-question-entry]');
+  if (questions.length <= 1) {
+    Toast.info('কমপক্ষে একটি প্রশ্ন রাখতে হবে।');
+    return;
+  }
+  button.closest('[data-question-entry]')?.remove();
+  entries.querySelectorAll('[data-question-number]').forEach((number, index) => {
+    number.textContent = String(index + 1);
   });
 };
 
@@ -2168,50 +2268,80 @@ window.saveNewQuestion = async (e) => {
       q.imageUrl = existingQuestion.imageUrl;
     }
   }
-  if (questionType === 'CQ') {
-    q.stimulus = document.getElementById('new-q-stimulus').value.trim();
-    q.parts = ['ক', 'খ', 'গ', 'ঘ'].map((label, index) => ({
-      label,
-      question: document.getElementById(`new-q-part-${index}`).value.trim(),
-      answer: document.getElementById(`new-q-answer-${index}`).value.trim()
-    }));
-  } else if (questionType === 'WRITTEN') {
-    q.text = document.getElementById('new-q-written-question').value.trim();
-    q.answer = document.getElementById('new-q-written-answer').value.trim();
-  } else {
-    q.text = document.getElementById('new-q-text').value.trim();
-    q.options = [
-      document.getElementById('new-q-opt0').value.trim(),
-      document.getElementById('new-q-opt1').value.trim(),
-      document.getElementById('new-q-opt2').value.trim(),
-      document.getElementById('new-q-opt3').value.trim()
-    ];
-    q.correctIndex = parseInt(document.getElementById('new-q-correct').value, 10);
-    q.explanation = document.getElementById('new-q-exp').value || 'সঠিক ব্যাখ্যা।';
-  }
   const submitButton = e.submitter;
   if (submitButton) submitButton.disabled = true;
+  let savedCount = 0;
   try {
-    const imageInput = document.getElementById(
-      questionType === 'CQ'
-        ? 'new-q-stimulus-image'
-        : questionType === 'WRITTEN'
-          ? 'new-q-written-image'
-          : 'new-q-image'
-    );
-    const imageFile = imageInput?.files[0];
-    if (imageFile) {
-      const { asset } = await AdminView.uploadFile(imageFile, category, 'question-image');
-      if (questionType === 'CQ') q.stimulusImageUrl = asset.url;
-      else q.imageUrl = asset.url;
+    if (questionType === 'MCQ') {
+      const entries = [...document.querySelectorAll('#new-q-mcq-entries [data-question-entry]')];
+      for (const entry of entries) {
+        const savedQuestion = {
+          ...q,
+          id: existingQuestion?.id || uid('q'),
+          text: entry.querySelector('.new-q-mcq-text').value.trim(),
+          stimulus: entry.querySelector('.new-q-mcq-stimulus').value.trim(),
+          options: [...entry.querySelectorAll('.new-q-mcq-option')].map(option => option.value.trim()),
+          correctIndex: parseInt(entry.querySelector('.new-q-mcq-correct').value, 10),
+          explanation: entry.querySelector('.new-q-mcq-explanation').value || 'সঠিক ব্যাখ্যা।'
+        };
+        const imageFile = entry.querySelector('.new-q-mcq-image')?.files[0];
+        if (imageFile) {
+          const { asset } = await AdminView.uploadFile(imageFile, category, 'question-image');
+          savedQuestion.imageUrl = asset.url;
+        }
+        await AdminView.saveResource('questions', savedQuestion);
+        savedCount++;
+        if (!existingQuestion) removeSavedQuestionEntry(entry);
+      }
+    } else if (questionType === 'CQ') {
+      const entries = [...document.querySelectorAll('#new-q-cq-entries [data-question-entry]')];
+      for (const entry of entries) {
+        const savedQuestion = {
+          ...q,
+          id: existingQuestion?.id || uid('q'),
+          stimulus: entry.querySelector('.new-q-cq-stimulus').value.trim(),
+          parts: ['ক', 'খ', 'গ', 'ঘ'].map((label, index) => ({
+            label,
+            question: entry.querySelectorAll('.new-q-cq-part-question')[index].value.trim(),
+            answer: entry.querySelectorAll('.new-q-cq-part-answer')[index].value.trim()
+          }))
+        };
+        const imageFile = entry.querySelector('.new-q-cq-image')?.files[0];
+        if (imageFile) {
+          const { asset } = await AdminView.uploadFile(imageFile, category, 'question-image');
+          savedQuestion.stimulusImageUrl = asset.url;
+        }
+        await AdminView.saveResource('questions', savedQuestion);
+        savedCount++;
+        if (!existingQuestion) removeSavedQuestionEntry(entry);
+      }
+    } else {
+      const entries = [...document.querySelectorAll('#new-q-written-entries [data-question-entry]')];
+      for (const entry of entries) {
+        const savedQuestion = {
+          ...q,
+          id: existingQuestion?.id || uid('q'),
+          text: entry.querySelector('.new-q-written-question').value.trim(),
+          answer: entry.querySelector('.new-q-written-answer').value.trim()
+        };
+        const imageFile = entry.querySelector('.new-q-written-image')?.files[0];
+        if (imageFile) {
+          const { asset } = await AdminView.uploadFile(imageFile, category, 'question-image');
+          savedQuestion.imageUrl = asset.url;
+        }
+        await AdminView.saveResource('questions', savedQuestion);
+        savedCount++;
+        if (!existingQuestion) removeSavedQuestionEntry(entry);
+      }
     }
-    await AdminView.saveResource('questions', q);
-    Toast.success(existingQuestion ? 'প্রশ্নের পরিবর্তন সংরক্ষণ হয়েছে!' : 'প্রশ্নটি প্রশ্নব্যাংকে যোগ করা হয়েছে!');
+    Toast.success(existingQuestion ? 'প্রশ্নের পরিবর্তন সংরক্ষণ হয়েছে!' : `${savedCount}টি প্রশ্ন প্রশ্নব্যাংকে যোগ করা হয়েছে!`);
     Modal.close();
     const content = document.getElementById('main-content');
     if (content) content.innerHTML = AdminView.render('questions');
   } catch (error) {
-    Toast.error(error.message);
+    Toast.error(savedCount
+      ? `${savedCount}টি প্রশ্ন সংরক্ষিত হয়েছে; বাকিগুলো সংরক্ষণ করা যায়নি: ${error.message}`
+      : error.message);
     if (submitButton) submitButton.disabled = false;
   }
 };

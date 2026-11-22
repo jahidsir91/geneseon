@@ -29,6 +29,7 @@ function renderQuestionCard(question, index, prefixes) {
         </div>
       </div>
 
+      ${question.stimulus ? `<p class="cq-stimulus"><span>উদ্দীপক:</span> ${escapeHtml(question.stimulus)}</p>` : ''}
       <h3 style="font-size: 1.15rem; font-weight: 600; line-height: 1.5; margin-bottom: 1rem;">
         <span style="color: var(--primary); font-weight: 800;">${index + 1}.</span> ${escapeHtml(question.text)}
       </h3>

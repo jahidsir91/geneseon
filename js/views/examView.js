@@ -375,6 +375,7 @@ export const ExamView = {
                       `).join('')}
                     </ol>
                   ` : `
+                    ${question.stimulus ? `<p class="question-runner-text">উদ্দীপক: ${escapeHtml(question.stimulus)}</p>` : ''}
                     <h2 class="question-runner-text">${escapeHtml(question.text)}</h2>
                     ${question.imageUrl ? `<img src="${escapeHtml(question.imageUrl)}" alt="প্রশ্নের ছবি" style="display: block; max-width: 100%; max-height: 420px; object-fit: contain; margin: 0 0 1.25rem; border-radius: var(--radius-md);">` : ''}
                     <div class="options-runner-list">
@@ -573,6 +574,7 @@ export const ExamView = {
                   </span>
                 </div>
 
+                ${q.stimulus ? `<p class="cq-stimulus"><span>উদ্দীপক:</span> ${escapeHtml(q.stimulus)}</p>` : ''}
                 <h3 style="font-size: 1.15rem; font-weight: 600; margin-bottom: 1.25rem; line-height: 1.4;">${escapeHtml(q.text)}</h3>
                 ${q.imageUrl ? `<img src="${escapeHtml(q.imageUrl)}" alt="প্রশ্নের ছবি" style="display: block; max-width: 100%; max-height: 420px; object-fit: contain; margin: 0 0 1rem; border-radius: var(--radius-md);">` : ''}
 

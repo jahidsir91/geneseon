@@ -388,6 +388,31 @@
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
 }
+.admin-question-entry {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+.admin-mcq-entry-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+  color: var(--primary);
+}
+.admin-mcq-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+.admin-mcq-options label > span {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
 .admin-cq-part legend {
   padding: 0 0.4rem;
   color: var(--primary);
@@ -395,6 +420,12 @@
 }
 .admin-question-empty {
   padding: 0 1rem 1rem;
+}
+
+@media (max-width: 480px) {
+  .admin-mcq-options {
+    grid-template-columns: 1fr;
+  }
 }
 
 .admin-table-header {

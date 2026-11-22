@@ -64,10 +64,8 @@ export class App {
     });
 
     const brandingPromise = this.loadBranding();
-    const [, activeExam] = await Promise.all([
-      Auth.ready,
-      ExamService.restoreCurrentSession()
-    ]);
+    await Auth.ready;
+    const activeExam = await ExamService.restoreCurrentSession();
     if (activeExam && !Auth.isAdmin()) {
       window.location.hash = `#/exam/${encodeURIComponent(activeExam.examId)}`;
     }
