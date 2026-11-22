@@ -6230,6 +6230,12 @@ function openCourseEditor(course = null) {
           </div>
         </div>
         <div class="form-group">
+          <label class="form-label" for="new-crs-thumbnail">কোর্স কার্ডের ছবি (ঐচ্ছিক, সর্বোচ্চ ৫ MB)</label>
+          <input type="file" id="new-crs-thumbnail" class="form-input" accept="image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp">
+          <small class="text-muted">PNG, JPG বা WebP। নতুন ছবি নির্বাচন করলে আগের ছবিটি বদলে যাবে।</small>
+          ${course?.thumbnail ? `<img src="${escapeHtml(course.thumbnail)}" alt="বর্তমান কোর্সের ছবি" style="display: block; max-width: 240px; max-height: 135px; object-fit: cover; margin-top: 0.75rem; border-radius: var(--radius-md);">` : ''}
+        </div>
+        <div class="form-group">
           <label class="form-label">ইনস্ট্রাক্টর নাম *</label>
           <input type="text" id="new-crs-inst" class="form-input" required value="${escapeHtml(course?.instructor?.name || 'ইঞ্জি. মো. রফিকুল ইসলাম (BUET)')}">
         </div>
@@ -6362,15 +6368,15 @@ const AdminView = window.AdminView = {
   async uploadFile(file, category, purpose) {
     const maxSize = purpose === 'video'
       ? 5 * 1024 * 1024 * 1024
-      : purpose === 'question-image'
+      : ['question-image', 'course-thumbnail'].includes(purpose)
         ? 5 * 1024 * 1024
         : 100 * 1024 * 1024;
     if (file.size > maxSize) {
       throw new Error(
         purpose === 'video'
           ? 'ভিডিও ফাইল সর্বোচ্চ ৫ GB হতে পারে।'
-          : purpose === 'question-image'
-            ? 'প্রশ্নের ছবি সর্বোচ্চ ৫ MB হতে পারে।'
+          : ['question-image', 'course-thumbnail'].includes(purpose)
+            ? 'ছবির ফাইল সর্বোচ্চ ৫ MB হতে পারে।'
           : 'PDF ফাইল সর্বোচ্চ ১০০ MB হতে পারে।'
       );
     }
@@ -7393,6 +7399,7 @@ window.saveNewCourse = async (e) => {
   const price = parseInt(document.getElementById('new-crs-price').value, 10);
   const inst = document.getElementById('new-crs-inst').value.trim();
   const desc = document.getElementById('new-crs-desc').value.trim();
+  const thumbnailFile = document.getElementById('new-crs-thumbnail').files[0] || null;
   const courseId = document.getElementById('course-edit-id').value;
   const existingCourse = courseId ? db.getCourseById(courseId) : null;
   const chapters = [...document.querySelectorAll('#course-editor-chapters .course-editor-chapter')];
@@ -7431,6 +7438,9 @@ window.saveNewCourse = async (e) => {
   const submitButton = e.submitter;
   if (submitButton) submitButton.disabled = true;
   try {
+    const thumbnailResult = thumbnailFile
+      ? await AdminView.uploadFile(thumbnailFile, cat, 'course-thumbnail')
+      : null;
     const updatedChapters = await Promise.all(chapterDrafts.map(async chapterDraft => {
       const chapterId = chapterDraft.element.dataset.chapterId;
       const priorChapter = existingCourse?.chapters?.find(chapter =>
@@ -7484,7 +7494,7 @@ window.saveNewCourse = async (e) => {
         avatar: existingCourse?.instructor?.avatar ||
           'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'
       },
-      thumbnail: existingCourse?.thumbnail ||
+      thumbnail: thumbnailResult?.asset.url || existingCourse?.thumbnail ||
         'https://images.unsplash.com/photo-1635070041078-e363dbe005cb?w=600',
       previewVideo: previewLesson?.videoUrl || existingCourse?.previewVideo || '',
       previewVideoType: previewLesson?.contentType || existingCourse?.previewVideoType || '',

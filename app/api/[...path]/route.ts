@@ -274,13 +274,31 @@ async function studentCanAccessAsset(user: NonNullable<Awaited<ReturnType<typeof
 
 async function mediaResponse(request: NextRequest, assetId: string, logo = false): Promise<Response> {
   const user = logo ? null : await requireUser(request);
-  if (!logo && !user) return json({ error: "মিডিয়া দেখতে লগইন করুন।" }, 401);
   const asset = await getAsset(assetId);
   if (!asset || (logo && asset.purpose !== "brand-logo")) {
     return json({ error: "মিডিয়া ফাইলটি পাওয়া যায়নি।" }, 404);
   }
-  if (!logo && user?.role !== "ADMIN") {
+  if (!logo && !user) {
+    if (asset.purpose !== "course-thumbnail") {
+      return json({ error: "মিডিয়া দেখতে লগইন করুন।" }, 401);
+    }
+    const courses = await listResources("courses", asset.category);
+    if (!courses.some(course =>
+      course.isPublished !== false && course.thumbnail === `/api/media/${assetId}`
+    )) {
+      return json({ error: "মিডিয়া ফাইলটি পাওয়া যায়নি।" }, 404);
+    }
+  }
+  if (!logo && user && user.role !== "ADMIN") {
     if (asset.category !== user?.educationType) return json({ error: "মিডিয়া ফাইলটি পাওয়া যায়নি।" }, 404);
+    if (asset.purpose === "course-thumbnail") {
+      const courses = await listResources("courses", asset.category);
+      if (!courses.some(course =>
+        course.isPublished !== false && course.thumbnail === `/api/media/${assetId}`
+      )) {
+        return json({ error: "মিডিয়া ফাইলটি পাওয়া যায়নি।" }, 404);
+      }
+    }
     if (["video", "course-pdf"].includes(asset.purpose) && !(await studentCanAccessAsset(user!, assetId))) {
       return json({ error: "মিডিয়া ফাইলটি পাওয়া যায়নি।" }, 404);
     }
@@ -1125,6 +1143,7 @@ const uploadRules: Record<string, { extensions: string[]; max: number; contentTy
   "cq-answer-sheet": { extensions: [".pdf"], max: 20 * 1024 ** 2, contentType: "application/pdf" },
   "brand-logo": { extensions: [".png", ".jpg", ".jpeg", ".webp"], max: 5 * 1024 ** 2, contentType: "image/" },
   "question-image": { extensions: [".png", ".jpg", ".jpeg", ".webp"], max: 5 * 1024 ** 2, contentType: "image/" },
+  "course-thumbnail": { extensions: [".png", ".jpg", ".jpeg", ".webp"], max: 5 * 1024 ** 2, contentType: "image/" },
 };
 
 function safeFileName(value: string): string {
