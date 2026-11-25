@@ -3825,8 +3825,13 @@ window.openScheduledExam = (examId, event) => {
     return;
   }
   event?.preventDefault();
-  window.history.pushState(null, '', `#/exam/${encodeURIComponent(examId)}`);
-  void window.appInstance?.handleRoute();
+  const startButton = event?.currentTarget;
+  if (startButton) startButton.disabled = true;
+  void window.appInstance?.openExamRoute(examId).catch(error => {
+    if (startButton) startButton.disabled = false;
+    console.error('Exam could not be opened:', error);
+    Toast.error(error.message || 'পরীক্ষা খোলা যায়নি।');
+  });
 };
 
 window.selectExamOption = (qid, idx) => {
@@ -9106,6 +9111,14 @@ class App {
         maxWidth: '440px'
       });
     }, 500);
+  }
+
+  async openExamRoute(examId) {
+    const markup = await ExamView.renderRunner(examId);
+    this.contentEl.innerHTML = markup;
+    window.history.pushState(null, '', `#/exam/${encodeURIComponent(examId)}`);
+    this.renderHeader();
+    window.scrollTo({ top: 0, behavior: 'instant' });
   }
 
   showAppInstallationInstructions() {

@@ -279,6 +279,14 @@ export class App {
     });
   }
 
+  async openExamRoute(examId) {
+    const markup = await ExamView.renderRunner(examId);
+    this.contentEl.innerHTML = markup;
+    window.history.pushState(null, '', `#/exam/${encodeURIComponent(examId)}`);
+    this.renderHeader();
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }
+
   async handleRoute() {
     try {
       this.contentEl = this.contentEl || document.getElementById('main-content');
