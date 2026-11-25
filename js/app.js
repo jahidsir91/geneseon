@@ -334,7 +334,11 @@ export class App {
         return;
       }
 
-      window.scrollTo({ top: 0, behavior: 'instant' });
+      const scrollAfterExamRouteRenders = path.startsWith('#/exam/') &&
+        !path.startsWith('#/exam/result/');
+      if (!scrollAfterExamRouteRenders) {
+        window.scrollTo({ top: 0, behavior: 'instant' });
+      }
       this.renderHeader();
 
       // Route matching
@@ -400,6 +404,9 @@ export class App {
         this.contentEl.innerHTML = AdminView.render(sub);
       } else {
         this.contentEl.innerHTML = `<div class="container text-center" style="padding: 4rem;"><h2>পেজটি পাওয়া যায়নি (404)</h2><a href="#/" class="btn btn-primary" style="margin-top: 1rem;">হোম পেজে যান</a></div>`;
+      }
+      if (scrollAfterExamRouteRenders) {
+        window.scrollTo({ top: 0, behavior: 'instant' });
       }
       this.maybeShowInstallPopup(path);
     } catch (err) {

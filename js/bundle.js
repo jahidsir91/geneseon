@@ -1048,6 +1048,7 @@ const initialDB = {
 class Database {
   constructor() {
     this.data = this.load();
+    this.modelTestParticipations = new Map();
   }
 
   load() {
@@ -1131,6 +1132,18 @@ class Database {
       this.data.products = resources.products;
     }
     this.save();
+  }
+
+  setModelTestParticipations(participations) {
+    this.modelTestParticipations = new Map(
+      participations.map(participation => [participation.examId, participation])
+    );
+  }
+  getModelTestParticipation(examId) {
+    return this.modelTestParticipations.get(examId) || null;
+  }
+  recordModelTestParticipation(participation) {
+    this.modelTestParticipations.set(participation.examId, participation);
   }
 
   // Courses
@@ -1319,9 +1332,17 @@ const Auth = window.Auth = {
 
   async loadContent() {
     if (!this.currentUser) return;
+    db.setModelTestParticipations([]);
     try {
       const content = await request('/api/content');
       db.mergeServerContent(content);
+      try {
+        const { participations } = await request('/api/exam-participations');
+        db.setModelTestParticipations(participations || []);
+      } catch (error) {
+        console.error('Model test participation synchronization failed:', error);
+        Toast.warning('মডেল টেস্টে অংশগ্রহণের তথ্য লোড করা যায়নি।');
+      }
       window.dispatchEvent(new CustomEvent('contentChanged'));
     } catch (error) {
       console.error('Server content synchronization failed:', error);
@@ -1436,6 +1457,7 @@ const Auth = window.Auth = {
       return false;
     }
     this.currentUser = null;
+    db.setModelTestParticipations([]);
     this.saveSession();
     Toast.info('সফলভাবে লগআউট হয়েছে।');
     window.location.hash = '#/login';
@@ -1798,6 +1820,10 @@ const ExamService = window.ExamService = {
   startExam(examId) {
     const exam = db.getExamById(examId);
     if (!exam) return null;
+    if (!Auth.isAdmin() && !examId.startsWith('custom_test_') && db.getModelTestParticipation(examId)) {
+      Toast.error('আপনি এই মডেল টেস্টে ইতিমধ্যে অংশগ্রহণ করেছেন।');
+      return null;
+    }
     if (!Auth.canAccessCategory(exam.category)) {
       Toast.error('এই পরীক্ষাটি আপনার অ্যাকাউন্টের জন্য উপলভ্য নয়।');
       return null;
@@ -2052,8 +2078,6 @@ const ExamService = window.ExamService = {
       skipped: skippedCount,
       negativePenalty: penalty,
       timeTaken: timeFormatted,
-      meritRank: `${Math.floor(Math.random() * 25) + 3} / 1,450`,
-      percentile: `${Math.min(99.9, (percentage + 5)).toFixed(1)}%`,
       submittedAt: new Date().toLocaleString('bn-BD'),
       answers: { ...session.answers },
       questions: session.questions,
@@ -2062,6 +2086,7 @@ const ExamService = window.ExamService = {
     };
 
     const hasCQ = questions.some(question => question.questionType === 'CQ');
+    let savedAsModelTest = false;
     if (hasCQ && !Auth.isAdmin()) {
       if (!session.cqAnswerSheet) {
         throw new Error('CQ পরীক্ষার উত্তরপত্র PDF আপলোড করুন।');
@@ -2080,6 +2105,20 @@ const ExamService = window.ExamService = {
         throw new Error(payload.error || 'পরীক্ষার উত্তরপত্র জমা দেওয়া যায়নি।');
       }
       Object.assign(resultRecord, payload.attempt);
+      savedAsModelTest = !session.examId.startsWith('custom_test_');
+    } else if (!hasCQ && user?.role === 'STUDENT' && !session.examId.startsWith('custom_test_')) {
+      const response = await fetch(`/api/exams/${encodeURIComponent(session.examId)}/attempts`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answers: session.answers, timeTaken: timeFormatted })
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || 'পরীক্ষার ফলাফল জমা দেওয়া যায়নি।');
+      }
+      Object.assign(resultRecord, payload.attempt);
+      savedAsModelTest = true;
     } else if (hasCQ) {
       resultRecord.cqStatus = 'pending';
       resultRecord.cqMaxMarks = Math.max(0, resultRecord.totalMarks - questions.filter(q => q.questionType !== 'CQ').length);
@@ -2088,6 +2127,13 @@ const ExamService = window.ExamService = {
     }
 
     db.addExamAttempt(resultRecord);
+    if (savedAsModelTest) {
+      db.recordModelTestParticipation({
+        examId: resultRecord.examId,
+        attemptId: resultRecord.id,
+        submittedAt: resultRecord.submittedAt
+      });
+    }
     this.currentSession = null;
     localStorage.removeItem(CURRENT_EXAM_STORAGE_KEY);
     try {
@@ -3082,6 +3128,10 @@ let examCopyHandler = null;
 let examSelectHandler = null;
 let autoSubmitPromise = null;
 
+function getExamScrollPosition() {
+  return document.querySelector('.exam-scroll-area')?.scrollTop ?? window.scrollY;
+}
+
 function getScheduleState(exam, now = Date.now()) {
   const startAt = exam.startAt ? Date.parse(exam.startAt) : null;
   const endAt = exam.endAt ? Date.parse(exam.endAt) : null;
@@ -3182,7 +3232,7 @@ function guardExamSession(session) {
   visibilityChangeHandler = () => {
     if (document.visibilityState === 'hidden') {
       pendingVisibilityLoss = true;
-      session.scrollY = window.scrollY;
+      session.scrollY = getExamScrollPosition();
       ExamService.saveCurrentSession();
       return;
     }
@@ -3196,7 +3246,7 @@ function guardExamSession(session) {
     }
   };
   beforeUnloadHandler = event => {
-    session.scrollY = window.scrollY;
+    session.scrollY = getExamScrollPosition();
     ExamService.saveCurrentSession();
   };
   examKeyHandler = event => {
@@ -3273,6 +3323,7 @@ const ExamView = window.ExamView = {
         <div class="exams-grid">
           ${exams.map(e => {
             const schedule = getScheduleState(e);
+            const participation = !Auth.isAdmin() ? db.getModelTestParticipation(e.id) : null;
             return `
             <div class="exam-card">
               <div class="exam-card-header">
@@ -3280,6 +3331,7 @@ const ExamView = window.ExamView = {
                 <span class="badge ${schedule.live ? 'badge-live' : schedule.expired ? 'badge-danger' : 'badge-warning'}" data-exam-status="${escapeHtml(e.id)}">${schedule.live ? 'LIVE' : schedule.expired ? 'সময় শেষ' : 'শুরু হতে বাকি'}</span>
               </div>
               <h3 style="font-size: 1.15rem; font-weight: 700; line-height: 1.4;">${e.title}</h3>
+              ${participation ? '<span class="badge badge-success" style="margin-bottom: 0.75rem;">অংশগ্রহণ করেছেন</span>' : ''}
               <div class="exam-meta-grid">
                 <div class="exam-meta-box">
                   <div class="num">${e.totalQuestions} টি</div>
@@ -3299,9 +3351,11 @@ const ExamView = window.ExamView = {
                   ? `⚠️ ভুল উত্তরের জন্য -${Number(e.negativeMarking ?? 0.25)} নম্বর কাটা যাবে`
                   : 'নেগেটিভ মার্কিং নেই'}
               </div>
-              <a href="#/exam/${escapeHtml(e.id)}" class="btn btn-primary btn-lg btn-block exam-start-button" data-exam-action="${escapeHtml(e.id)}" aria-disabled="${schedule.upcoming || schedule.expired}" onclick="return window.openScheduledExam('${escapeHtml(e.id)}', event)">
-                ${icons.play}<span data-exam-label>${schedule.upcoming ? `শুরু হতে বাকি ${formatCountdown(schedule.countdown)}` : schedule.expired ? 'সময় শেষ' : 'পরীক্ষা শুরু করুন'}</span>
-              </a>
+              ${participation
+                ? `<a href="#/exam/result/${encodeURIComponent(participation.attemptId)}" class="btn btn-primary btn-lg btn-block exam-start-button">${icons.barChart}<span>ফলাফল দেখুন</span></a>`
+                : `<button type="button" class="btn btn-primary btn-lg btn-block exam-start-button" data-exam-action="${escapeHtml(e.id)}" aria-disabled="${schedule.upcoming || schedule.expired}" onclick="window.openScheduledExam('${escapeHtml(e.id)}', event)">
+                  ${icons.play}<span data-exam-label>${schedule.upcoming ? `শুরু হতে বাকি ${formatCountdown(schedule.countdown)}` : schedule.expired ? 'সময় শেষ' : 'পরীক্ষা শুরু করুন'}</span>
+                </button>`}
             </div>
           `;
           }).join('')}
@@ -3317,6 +3371,26 @@ const ExamView = window.ExamView = {
   async renderRunner(examId) {
     if (scheduleInterval) clearInterval(scheduleInterval);
     const activeSession = ExamService.getCurrentSession();
+    const exam = db.getExamById(examId);
+    if (exam && !Auth.isAdmin() && !examId.startsWith('custom_test_')) {
+      const response = await fetch(`/api/exams/${encodeURIComponent(examId)}/participation`, {
+        credentials: 'same-origin'
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'পরীক্ষায় অংশগ্রহণের তথ্য লোড করা যায়নি।');
+      if (result.participated) {
+        return `
+          <div class="container text-center" style="padding: 4rem 1rem;">
+            <span class="badge badge-success">অংশগ্রহণ করেছেন</span>
+            <h2 style="margin: 1rem 0 0.5rem;">এই মডেল টেস্টে আপনি আগেই অংশগ্রহণ করেছেন</h2>
+            <p class="text-muted">একটি মডেল টেস্টে একবারই অংশ নেওয়া যাবে।</p>
+            ${result.attemptId
+              ? `<a href="#/exam/result/${encodeURIComponent(result.attemptId)}" class="btn btn-primary" style="margin-top: 1rem;">নিজের ফলাফল দেখুন</a>`
+              : '<a href="#/exam" class="btn btn-secondary" style="margin-top: 1rem;">মডেল টেস্টে ফিরে যান</a>'}
+          </div>
+        `;
+      }
+    }
     const session = activeSession?.examId === examId && activeSession.userId === Auth.getUser()?.id
       ? activeSession
       : ExamService.startExam(examId);
@@ -3333,7 +3407,11 @@ const ExamView = window.ExamView = {
     }
     if (!Auth.isAdmin()) guardExamSession(session);
     if (session.scrollY > 0) {
-      requestAnimationFrame(() => window.scrollTo(0, session.scrollY));
+      requestAnimationFrame(() => {
+        const scrollArea = document.querySelector('.exam-scroll-area');
+        if (scrollArea) scrollArea.scrollTop = session.scrollY;
+        else window.scrollTo(0, session.scrollY);
+      });
     }
 
     // Start timer interval if not active
@@ -3389,7 +3467,8 @@ const ExamView = window.ExamView = {
           </div>
         </header>
 
-        ${hasCQ ? `
+        <div class="exam-scroll-area">
+          ${hasCQ ? `
           <section class="exam-cq-upload-banner">
             <div>
               <strong>CQ উত্তরপত্র (PDF) *</strong>
@@ -3457,15 +3536,25 @@ const ExamView = window.ExamView = {
             }).join('')}
           </section>
 
-          <!-- Question Palette -->
-          <div class="palette-card">
-            <h4 style="font-size: 1rem; margin-bottom: 0.75rem;">প্রশ্নে যান</h4>
+        </div>
+        </div>
+        <div class="exam-question-navigation" id="exam-question-navigation">
+          <button class="exam-question-navigation-toggle" type="button" aria-controls="exam-question-palette" aria-expanded="false" onclick="window.toggleExamQuestionNavigation()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            <span>প্রশ্ন নেভিগেশন</span>
+            <span class="exam-question-navigation-count">${session.questions.length}</span>
+          </button>
+          <div class="palette-card" id="exam-question-palette" aria-hidden="true" aria-label="প্রশ্ন নেভিগেশন">
+            <div class="exam-question-navigation-heading">
+              <h4>প্রশ্নে যান</h4>
+              <button class="exam-question-navigation-close" type="button" aria-label="নেভিগেশন বন্ধ করুন" onclick="window.toggleExamQuestionNavigation(false)">×</button>
+            </div>
             <div class="palette-grid">
               ${session.questions.map((ques, idx) => {
                 const ans = session.answers[ques.id] !== undefined;
                 const flg = session.flagged.has(ques.id);
                 return `
-                  <button class="palette-btn ${ans ? 'answered' : ''} ${flg ? 'flagged' : ''}" data-palette-question="${idx}" onclick="window.gotoExamQuestion(${idx})">
+                  <button class="palette-btn ${ans ? 'answered' : ''} ${flg ? 'flagged' : ''} ${idx === session.currentIndex ? 'current' : ''}" data-palette-question="${idx}" onclick="window.gotoExamQuestion(${idx})">
                     ${idx + 1}
                   </button>
                 `;
@@ -3521,6 +3610,22 @@ const ExamView = window.ExamView = {
       return `<div class="container text-center" style="padding: 4rem;"><h2>ফলাফল পাওয়া যায়নি</h2><a href="#/exam" class="btn btn-primary">সকল পরীক্ষা</a></div>`;
     }
 
+    const isModelTestAttempt = Boolean(attempt.examId) && !String(attempt.examId).startsWith('custom_test_');
+    let leaderboardSummary = null;
+    if (isModelTestAttempt && !Auth.isAdmin()) {
+      try {
+        const response = await fetch(`/api/exams/${encodeURIComponent(attempt.examId)}/leaderboard`, {
+          credentials: 'same-origin'
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'মেধা তালিকা লোড করা যায়নি।');
+        leaderboardSummary = result;
+      } catch (error) {
+        console.error('Model test leaderboard could not be loaded:', error);
+        Toast.error(error.message || 'মেধা তালিকা লোড করা যায়নি।');
+      }
+    }
+
     const prefixes = ['ক', 'খ', 'গ', 'ঘ'];
 
     return `
@@ -3536,7 +3641,7 @@ const ExamView = window.ExamView = {
           </div>
 
           <p style="font-size: 1.1rem; font-weight: 600; color: var(--primary); margin-bottom: 1rem;">
-            ${attempt.cqStatus === 'pending' ? 'CQ মূল্যায়নের আগে MCQ-এর অস্থায়ী নম্বর' : 'শতকরা নম্বর'}: ${attempt.percentage}% ${attempt.meritRank ? `• মেধা তালিকা: ${attempt.meritRank} (শীর্ষ ${attempt.percentile})` : ''}
+            ${attempt.cqStatus === 'pending' ? 'CQ মূল্যায়নের আগে MCQ-এর অস্থায়ী নম্বর' : 'শতকরা নম্বর'}: ${attempt.percentage}%
           </p>
 
           <div class="result-stats-row">
@@ -3566,6 +3671,23 @@ const ExamView = window.ExamView = {
             </div>
           </div>
         </div>
+
+        ${isModelTestAttempt && !Auth.isAdmin() ? `
+          <section class="card" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;padding:1.25rem 1.5rem;margin-bottom:2rem;">
+            <div>
+              <h2 style="font-size:1.15rem;margin-bottom:0.35rem;">মডেল টেস্টের মেধা তালিকা</h2>
+              <p class="text-muted">${leaderboardSummary?.rank
+                ? `তোমার অবস্থান: ${leaderboardSummary.rank} / ${leaderboardSummary.participantCount}`
+                : attempt.cqStatus === 'pending'
+                  ? 'CQ মূল্যায়ন সম্পন্ন হলে তোমার অবস্থান দেখা যাবে।'
+                  : 'তোমার অবস্থান লোড করা যায়নি।'}
+              </p>
+            </div>
+            <button type="button" class="btn btn-primary" onclick="window.openModelTestLeaderboard('${escapeHtml(attempt.examId)}')">
+              শীর্ষ ৫০ মেধা তালিকা দেখুন
+            </button>
+          </section>
+        ` : ''}
 
         ${attempt.cqStatus ? `
           <section class="card exam-cq-result-card">
@@ -3692,19 +3814,19 @@ window.selectCQAnswerSheet = (event) => {
 // Global Exam Handlers
 window.openScheduledExam = (examId, event) => {
   const exam = db.getExamById(examId);
-  if (!exam) return true;
+  if (!exam) return;
   const schedule = getScheduleState(exam);
   if (schedule.upcoming) {
-    event.preventDefault();
     Toast.info(`পরীক্ষা শুরু হতে বাকি ${formatCountdown(schedule.countdown)}`);
-    return false;
+    return;
   }
   if (schedule.expired) {
-    event.preventDefault();
     Toast.warning('এই পরীক্ষার সময় শেষ হয়েছে।');
-    return false;
+    return;
   }
-  return true;
+  event?.preventDefault();
+  window.history.pushState(null, '', `#/exam/${encodeURIComponent(examId)}`);
+  void window.appInstance?.handleRoute();
 };
 
 window.selectExamOption = (qid, idx) => {
@@ -3763,11 +3885,61 @@ window.gotoExamQuestion = (idx) => {
   if (session && session.questions[idx]) {
     session.currentIndex = idx;
     ExamService.saveCurrentSession();
+    document.querySelectorAll('[data-palette-question]').forEach(button => {
+      button.classList.toggle('current', Number(button.dataset.paletteQuestion) === idx);
+    });
+    window.toggleExamQuestionNavigation(false);
     document.getElementById(`exam-question-${idx}`)?.scrollIntoView({
       behavior: 'smooth',
       block: 'start'
     });
   }
+};
+
+window.openModelTestLeaderboard = async (examId) => {
+  try {
+    const response = await fetch(`/api/exams/${encodeURIComponent(examId)}/leaderboard`, {
+      credentials: 'same-origin'
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'মেধা তালিকা লোড করা যায়নি।');
+    const entries = result.entries || [];
+    Modal.open({
+      title: 'শীর্ষ ৫০ মেধা তালিকা',
+      maxWidth: '680px',
+      content: entries.length ? `
+        <p class="text-muted" style="margin-bottom:1rem;">মোট অংশগ্রহণকারী: ${result.participantCount || 0} জন</p>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead><tr><th>অবস্থান</th><th>শিক্ষার্থীর নাম</th><th>নম্বর</th></tr></thead>
+            <tbody>${entries.map(entry => `
+              <tr>
+                <td><strong>${entry.rank}</strong></td>
+                <td>${escapeHtml(entry.name)}</td>
+                <td>${entry.score}</td>
+              </tr>
+            `).join('')}</tbody>
+          </table>
+        </div>
+      ` : '<div class="empty-state"><p class="empty-state-text">এখনো কোনো ফলাফল প্রকাশিত হয়নি।</p></div>'
+    });
+  } catch (error) {
+    console.error('Model test leaderboard could not be opened:', error);
+    Toast.error(error.message || 'মেধা তালিকা লোড করা যায়নি।');
+  }
+};
+
+window.toggleExamQuestionNavigation = (forceOpen) => {
+  const navigation = document.getElementById('exam-question-navigation');
+  const toggle = navigation?.querySelector('.exam-question-navigation-toggle');
+  const palette = document.getElementById('exam-question-palette');
+  if (!navigation || !toggle || !palette) return;
+  const isOpen = typeof forceOpen === 'boolean'
+    ? forceOpen
+    : !navigation.classList.contains('open');
+  navigation.classList.toggle('open', isOpen);
+  toggle.setAttribute('aria-expanded', String(isOpen));
+  palette.setAttribute('aria-hidden', String(!isOpen));
 };
 
 window.confirmSubmitExam = () => {
@@ -3849,6 +4021,7 @@ window.toggleExamQuestionFavorite = async questionId => {
 
 let revealedAnswers = new Set();
 let favoriteQuestionIds = new Set();
+let questionBankReturnState = null;
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, char => ({
@@ -4002,7 +4175,7 @@ function refreshQuestionCard(questionId) {
   currentCard.remove();
 }
 
-function renderQuestionSubjects(group, prefixes) {
+function renderQuestionSubjects(group, prefixes, openTypesFullScreen = false) {
   return group.subjects.length ? group.subjects.map(subjectGroup => `
     <details class="qb-subject-group">
       <summary>
@@ -4020,6 +4193,20 @@ function renderQuestionSubjects(group, prefixes) {
               (question.questionType || 'MCQ') === type
             );
             const typeLabel = type === 'WRITTEN' ? 'Written' : type;
+            if (openTypesFullScreen) {
+              return `
+                <button class="qb-type-entry" type="button"
+                  data-category="${escapeHtml(group.category)}"
+                  data-subject="${escapeHtml(subjectGroup.subject)}"
+                  data-chapter="${escapeHtml(chapterGroup.chapter)}"
+                  data-question-type="${type}"
+                  onclick="window.openQBQuestionSetFromButton(this)">
+                  <span>${typeLabel}</span>
+                  <span class="qb-hierarchy-count">${typedQuestions.length}টি প্রশ্ন</span>
+                  <span class="qb-type-entry-arrow" aria-hidden="true">›</span>
+                </button>
+              `;
+            }
             return `
               <details class="qb-type-group">
                 <summary>
@@ -4101,7 +4288,7 @@ const QuestionBankView = window.QuestionBankView = {
       <div class="container">
         <div class="qb-hierarchy">
           ${questionHierarchy.map(group => user && !Auth.isAdmin()
-            ? renderQuestionSubjects(group, prefixes)
+            ? renderQuestionSubjects(group, prefixes, true)
             : `
               <details class="qb-category-group">
                 <summary>
@@ -4115,6 +4302,71 @@ const QuestionBankView = window.QuestionBankView = {
         </div>
       </div>
     `;
+  },
+
+  openQuestionSet(category, subject, chapter, type) {
+    const user = Auth.getUser();
+    if (!user || Auth.isAdmin() || user.educationType !== category ||
+        !['MCQ', 'CQ', 'WRITTEN'].includes(type)) {
+      Toast.error('প্রশ্নগুলো খোলা যাচ্ছে না।');
+      return;
+    }
+    const questions = db.getQuestions().filter(question =>
+      question.category === category &&
+      question.subject === subject &&
+      (question.chapter || 'অন্যান্য অধ্যায়') === chapter &&
+      (question.questionType || 'MCQ') === type
+    );
+    const main = document.getElementById('main-content');
+    if (!main) return;
+    const openGroups = [...main.querySelectorAll('.qb-hierarchy details')]
+      .flatMap((element, index) => element.open ? [index] : []);
+    questionBankReturnState = {
+      scrollY: window.scrollY,
+      openGroups,
+    };
+    const typeLabel = type === 'WRITTEN' ? 'Written' : type;
+    const cards = questions.map((question, index) =>
+      type === 'CQ'
+        ? renderCQCard(question, index)
+        : type === 'WRITTEN'
+          ? renderWrittenCard(question, index)
+          : renderQuestionCard(question, index, ['ক', 'খ', 'গ', 'ঘ'])
+    ).join('');
+    main.innerHTML = `
+      <section class="qb-fullscreen-view" aria-label="${escapeHtml(typeLabel)} প্রশ্নসমূহ">
+        <header class="qb-fullscreen-header">
+          <button class="btn btn-secondary qb-fullscreen-back" type="button" onclick="window.closeQBQuestionSet()">
+            <span aria-hidden="true">←</span> প্রশ্নব্যাংকে ফিরুন
+          </button>
+          <div class="qb-fullscreen-heading">
+            <p class="text-muted">${escapeHtml(category)} · ${escapeHtml(subject)} · ${escapeHtml(chapter)}</p>
+            <h1>${typeLabel} প্রশ্ন</h1>
+            <span class="qb-hierarchy-count">${questions.length}টি প্রশ্ন</span>
+          </div>
+        </header>
+        <div class="qb-fullscreen-question-list">
+          ${questions.length
+            ? cards
+            : '<p class="text-muted qb-empty-category">এই অধ্যায়ে এই ধরনের কোনো প্রশ্ন নেই।</p>'}
+        </div>
+      </section>
+    `;
+    window.scrollTo(0, 0);
+  },
+
+  closeQuestionSet() {
+    if (!questionBankReturnState) return;
+    const { scrollY, openGroups } = questionBankReturnState;
+    questionBankReturnState = null;
+    const main = document.getElementById('main-content');
+    if (!main) return;
+    main.innerHTML = this.renderList();
+    const details = main.querySelectorAll('.qb-hierarchy details');
+    openGroups.forEach(index => {
+      if (details[index]) details[index].open = true;
+    });
+    window.scrollTo(0, scrollY);
   },
 
   renderPracticeGenerator() {
@@ -4178,6 +4430,20 @@ const QuestionBankView = window.QuestionBankView = {
               </select>
             </div>
 
+            <div class="form-group">
+              <label class="form-label" for="gen-negative-marking">ভুল উত্তরের জন্য নেগেটিভ মার্কিং</label>
+              <select id="gen-negative-marking" class="form-select" onchange="window.updatePracticeNegativeMarking()">
+                <option value="0">নেগেটিভ মার্কিং নেই</option>
+                <option value="0.25" selected>প্রতি ভুল উত্তরে -০.২৫</option>
+                <option value="0.5">প্রতি ভুল উত্তরে -০.৫</option>
+                <option value="custom">নিজের মান দিন</option>
+              </select>
+              <div id="gen-negative-custom-group" class="form-group" hidden style="margin-top: 0.75rem;">
+                <label class="form-label" for="gen-negative-custom">প্রতি ভুল উত্তরে কত নম্বর কাটবে?</label>
+                <input id="gen-negative-custom" class="form-input" type="number" min="0" max="10" step="0.01" value="0.25">
+              </div>
+            </div>
+
             <button type="submit" class="btn btn-glowing btn-lg btn-block" style="margin-top: 1.5rem;">
               ${icons.sparkles} টেস্ট তৈরি করুন ও শুরু করুন
             </button>
@@ -4187,6 +4453,16 @@ const QuestionBankView = window.QuestionBankView = {
     `;
   }
 };
+
+window.openQBQuestionSetFromButton = button => {
+  QuestionBankView.openQuestionSet(
+    button.dataset.category,
+    button.dataset.subject,
+    button.dataset.chapter,
+    button.dataset.questionType
+  );
+};
+window.closeQBQuestionSet = () => QuestionBankView.closeQuestionSet();
 
 QuestionBankView.loadFavoriteQuestionIds = async () => {
   const user = Auth.getUser();
@@ -4233,6 +4509,16 @@ window.updatePracticeFilters = () => {
     `<option value="${escapeHtml(chapter)}">${escapeHtml(chapter)}</option>`
   ).join('')}`;
   if (chapters.includes(previousChapter)) chapterSelect.value = previousChapter;
+};
+
+window.updatePracticeNegativeMarking = () => {
+  const selector = document.getElementById('gen-negative-marking');
+  const customGroup = document.getElementById('gen-negative-custom-group');
+  const customInput = document.getElementById('gen-negative-custom');
+  if (!selector || !customGroup || !customInput) return;
+  const isCustom = selector.value === 'custom';
+  customGroup.hidden = !isCustom;
+  customInput.required = isCustom;
 };
 
 window.testQBAnswer = (qid, optIdx) => {
@@ -4356,6 +4642,14 @@ window.generateCustomTest = (e) => {
   const subject = document.getElementById('gen-subject').value;
   const chapter = document.getElementById('gen-chapter').value;
   const difficulty = document.getElementById('gen-difficulty').value;
+  const negativeMarkingSelection = document.getElementById('gen-negative-marking').value;
+  const negativeMarking = negativeMarkingSelection === 'custom'
+    ? Number(document.getElementById('gen-negative-custom').value)
+    : Number(negativeMarkingSelection);
+  if (!Number.isFinite(negativeMarking) || negativeMarking < 0 || negativeMarking > 10) {
+    Toast.error('নেগেটিভ মার্কিং ০ থেকে ১০-এর মধ্যে দিন।');
+    return;
+  }
   const favoritesOnly = difficulty === 'FAVORITES';
   const matchingQuestions = db.getQuestions().filter(question =>
     question.category === cat
@@ -4384,7 +4678,7 @@ window.generateCustomTest = (e) => {
     totalQuestions: selectedQuestions.length,
     durationMinutes: Math.max(5, Math.round(selectedQuestions.length * 1.0)),
     totalMarks: selectedQuestions.length,
-    negativeMarking: 0.25,
+    negativeMarking,
     accessType: 'free',
     isLive: true
   };
@@ -9016,7 +9310,11 @@ class App {
         return;
       }
 
-      window.scrollTo({ top: 0, behavior: 'instant' });
+      const scrollAfterExamRouteRenders = path.startsWith('#/exam/') &&
+        !path.startsWith('#/exam/result/');
+      if (!scrollAfterExamRouteRenders) {
+        window.scrollTo({ top: 0, behavior: 'instant' });
+      }
       this.renderHeader();
 
       // Route matching
@@ -9082,6 +9380,9 @@ class App {
         this.contentEl.innerHTML = AdminView.render(sub);
       } else {
         this.contentEl.innerHTML = `<div class="container text-center" style="padding: 4rem;"><h2>পেজটি পাওয়া যায়নি (404)</h2><a href="#/" class="btn btn-primary" style="margin-top: 1rem;">হোম পেজে যান</a></div>`;
+      }
+      if (scrollAfterExamRouteRenders) {
+        window.scrollTo({ top: 0, behavior: 'instant' });
       }
       this.maybeShowInstallPopup(path);
     } catch (err) {

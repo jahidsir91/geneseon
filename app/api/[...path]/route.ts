@@ -818,6 +818,93 @@ async function getHandler(request: NextRequest, path: string): Promise<Response>
     ) : allProducts;
     return json({ courses, exams, questions, products });
   }
+  if (path === "/api/exam-participations") {
+    const user = await requireUser(request);
+    if (!user) return json({ error: "প্রথমে লগইন করুন।" }, 401);
+    if (user.role !== "STUDENT") return json({ participations: [] });
+    const { data, error } = await supabase.from("model_test_participations")
+      .select("exam_id,attempt_id,submitted_at").eq("user_id", user.id);
+    if (error) throw error;
+    return json({
+      participations: (data ?? []).map((item) => ({
+        examId: item.exam_id,
+        attemptId: item.attempt_id,
+        submittedAt: item.submitted_at,
+      })),
+    });
+  }
+  const modelTestMatch = path.match(/^\/api\/exams\/([^/]+)\/(participation|leaderboard)$/);
+  if (modelTestMatch) {
+    const user = await requireUser(request);
+    if (!user) return json({ error: "প্রথমে লগইন করুন।" }, 401);
+    const examId = decodeURIComponent(modelTestMatch[1]);
+    const exams = await listResources("exams", user.role === "ADMIN" ? undefined : user.educationType ?? undefined);
+    const exam = exams.find((item) => item.id === examId);
+    if (!exam || (user.role === "STUDENT" && exam.category !== user.educationType)) {
+      return json({ error: "মডেল টেস্টটি পাওয়া যায়নি।" }, 404);
+    }
+    const { data: participation, error: participationError } = await supabase.from("model_test_participations")
+      .select("attempt_id,display_name,score,submitted_at,status")
+      .eq("exam_id", examId).eq("user_id", user.id).maybeSingle();
+    if (participationError) throw participationError;
+    if (modelTestMatch[2] === "participation") {
+      if (participation) {
+        return json({
+          participated: true,
+          attemptId: participation.attempt_id,
+          submittedAt: participation.submitted_at,
+        });
+      }
+      const { data: priorAttempt, error: attemptError } = await supabase.from("exam_attempts")
+        .select("id,submitted_at").eq("exam_id", examId).eq("user_id", user.id).limit(1).maybeSingle();
+      if (attemptError) throw attemptError;
+      return json(priorAttempt
+        ? { participated: true, attemptId: priorAttempt.id, submittedAt: priorAttempt.submitted_at }
+        : { participated: false });
+    }
+
+    const [leaderboardResult, participantCountResult] = await Promise.all([
+      supabase.from("model_test_participations")
+        .select("display_name,score,submitted_at")
+        .eq("exam_id", examId).not("score", "is", null)
+        .order("score", { ascending: false }).order("submitted_at", { ascending: true }).limit(50),
+      supabase.from("model_test_participations")
+        .select("user_id", { count: "exact", head: true }).eq("exam_id", examId),
+    ]);
+    if (leaderboardResult.error) throw leaderboardResult.error;
+    if (participantCountResult.error) throw participantCountResult.error;
+    let previousScore: number | null = null;
+    let previousRank = 0;
+    const entries = (leaderboardResult.data ?? []).map((entry, index) => {
+      const score = Number(entry.score);
+      if (score !== previousScore) {
+        previousRank = index + 1;
+        previousScore = score;
+      }
+      return {
+        rank: previousRank,
+        name: entry.display_name,
+        score,
+        submittedAt: entry.submitted_at,
+      };
+    });
+    let rank: number | null = null;
+    if (participation?.score !== null && participation?.score !== undefined) {
+      const { count, error } = await supabase.from("model_test_participations")
+        .select("user_id", { count: "exact", head: true })
+        .eq("exam_id", examId).gt("score", participation.score);
+      if (error) throw error;
+      rank = (count ?? 0) + 1;
+    }
+    return json({
+      participated: Boolean(participation),
+      attemptId: participation?.attempt_id ?? null,
+      status: participation?.status ?? null,
+      rank,
+      participantCount: participantCountResult.count ?? 0,
+      entries,
+    });
+  }
   if (path === "/api/orders" || path === "/api/exam-attempts" || path === "/api/admin/exam-attempts") {
     const user = await requireUser(request);
     if (!user) return json({ error: "প্রথমে লগইন করুন।" }, 401);
@@ -1287,6 +1374,156 @@ async function adminUpload(request: NextRequest): Promise<Response> {
   });
 }
 
+type StudentUser = NonNullable<Awaited<ReturnType<typeof requireUser>>>;
+
+async function hasModelTestAttempt(userId: string, examId: string): Promise<boolean> {
+  const [attemptResult, participationResult] = await Promise.all([
+    supabase.from("exam_attempts").select("id").eq("user_id", userId).eq("exam_id", examId).limit(1),
+    supabase.from("model_test_participations").select("attempt_id")
+      .eq("user_id", userId).eq("exam_id", examId).maybeSingle(),
+  ]);
+  if (attemptResult.error) throw attemptResult.error;
+  if (participationResult.error) throw participationResult.error;
+  return Boolean(attemptResult.data?.length || participationResult.data);
+}
+
+async function loadExamQuestions(exam: JsonObject, questionIds: string[]): Promise<JsonObject[]> {
+  const { data, error } = await supabase.from("content_resources").select("id, category, content")
+    .eq("resource_type", "questions").in("id", questionIds);
+  if (error) throw error;
+  const questionMap = new Map((data ?? []).map((row) => [
+    String(row.id),
+    {
+      ...(row.content as JsonObject),
+      id: String(row.id),
+      category: String(row.category ?? ""),
+    },
+  ] as const));
+  const questions = questionIds.map((id) => questionMap.get(id)).filter((question) => question !== undefined);
+  const examCategory = String(exam.category ?? "").trim().toUpperCase();
+  if (questions.length !== questionIds.length || questions.some((question) =>
+    String(question.category ?? "").trim().toUpperCase() !== examCategory
+  )) {
+    throw new ApiError("এই মডেল টেস্টের কিছু প্রশ্ন আর পাওয়া যাচ্ছে না। Admin-কে প্রশ্নগুলো যাচাই করতে বলুন।", 400);
+  }
+  return questions;
+}
+
+async function submitMcqModelTestAttempt(
+  request: NextRequest,
+  user: StudentUser,
+  exam: JsonObject,
+): Promise<Response> {
+  let input: JsonObject;
+  try {
+    input = await body(request);
+  } catch (error) {
+    return json(
+      { error: error instanceof Error ? error.message : "পরীক্ষার উত্তর সঠিক নয়।" },
+      error instanceof ApiError ? error.status : 400,
+    );
+  }
+  const rawAnswers = input.answers;
+  const timeTaken = input.timeTaken;
+  if (!rawAnswers || typeof rawAnswers !== "object" || Array.isArray(rawAnswers)) {
+    return json({ error: "পরীক্ষার উত্তর সঠিক নয়।" }, 400);
+  }
+  const answers = rawAnswers as Record<string, unknown>;
+  if (!text(timeTaken) || timeTaken.length > 10 || !/^\d{1,3}:\d{2}$/.test(timeTaken)) {
+    return json({ error: "পরীক্ষায় ব্যয় করা সময় সঠিক নয়।" }, 400);
+  }
+  const questionIds = exam.questionIds;
+  if (!Array.isArray(questionIds) || !questionIds.length || questionIds.some((id) => !text(id)) ||
+      new Set(questionIds).size !== questionIds.length) {
+    return json({ error: "পরীক্ষার প্রশ্নগুলো আর পাওয়া যাচ্ছে না।" }, 400);
+  }
+  const questions = await loadExamQuestions(exam, questionIds);
+  if (questions.some((question) =>
+    String(question.questionType || "MCQ").trim().toUpperCase() !== "MCQ"
+  )) {
+    return json({ error: "এই পরীক্ষার MCQ প্রশ্নগুলো আর পাওয়া যাচ্ছে না।" }, 400);
+  }
+  const questionMap = new Map(questions.map((question) => [String(question.id), question]));
+  for (const question of questions) {
+    if (!Array.isArray(question.options) || !Number.isInteger(question.correctIndex) ||
+        Number(question.correctIndex) < 0 || Number(question.correctIndex) >= question.options.length) {
+      return json({ error: "পরীক্ষার একটি বা একাধিক MCQ সঠিকভাবে সেট করা হয়নি।" }, 400);
+    }
+  }
+  for (const [questionId, answer] of Object.entries(answers)) {
+    const question = questionMap.get(questionId);
+    if (!question || !questions.some((item) => item.id === questionId) ||
+        !Number.isInteger(answer) || Number(answer) < 0 ||
+        Number(answer) >= (Array.isArray(question.options) ? question.options.length : 0)) {
+      return json({ error: "এক বা একাধিক MCQ উত্তর সঠিক নয়।" }, 400);
+    }
+  }
+
+  const correct = questions.filter((question) => answers[String(question.id)] === question.correctIndex).length;
+  const wrong = questions.filter((question) =>
+    answers[String(question.id)] !== undefined && answers[String(question.id)] !== question.correctIndex
+  ).length;
+  const skipped = questions.length - correct - wrong;
+  const negativeMarking = Number(exam.negativeMarking ?? 0);
+  const totalMarks = Number(exam.totalMarks ?? questions.length);
+  if (!Number.isFinite(negativeMarking) || negativeMarking < 0 ||
+      !Number.isFinite(totalMarks) || totalMarks <= 0) {
+    return json({ error: "পরীক্ষার নম্বর বা নেগেটিভ মার্কিং সঠিক নয়।" }, 400);
+  }
+  const negativePenalty = wrong * negativeMarking;
+  const score = Math.max(0, Math.round((correct - negativePenalty) * 100) / 100);
+  const submittedAt = new Date().toISOString();
+  const topicBreakdown: Record<string, { total: number; correct: number; wrong: number }> = {};
+  for (const question of questions) {
+    const topic = String(question.topic ?? question.chapter ?? "সাধারণ");
+    topicBreakdown[topic] ??= { total: 0, correct: 0, wrong: 0 };
+    topicBreakdown[topic].total++;
+    const answer = answers[String(question.id)];
+    if (answer === question.correctIndex) topicBreakdown[topic].correct++;
+    else if (answer !== undefined) topicBreakdown[topic].wrong++;
+  }
+  const attempt: JsonObject = {
+    id: `atm_${randomBytes(12).toString("base64url")}`,
+    userId: user.id,
+    userName: user.name,
+    examId: String(exam.id),
+    examTitle: String(exam.title ?? ""),
+    category: String(exam.category ?? user.educationType ?? ""),
+    subject: String(exam.subject ?? ""),
+    score,
+    totalMarks,
+    percentage: Math.round(score / totalMarks * 100),
+    correct,
+    wrong,
+    skipped,
+    negativePenalty: Math.round(negativePenalty * 100) / 100,
+    timeTaken,
+    submittedAt,
+    answers,
+    questions,
+    topicBreakdown,
+    weakTopics: Object.keys(topicBreakdown).filter((topic) => {
+      const stats = topicBreakdown[topic];
+      return stats.wrong > 0 || stats.correct / stats.total < 0.6;
+    }),
+  };
+  const { data: saved, error } = await supabase.rpc("submit_model_test_attempt", {
+    p_user_id: user.id,
+    p_exam_id: String(exam.id),
+    p_category: String(exam.category ?? user.educationType ?? ""),
+    p_attempt: attempt,
+    p_answers: answers,
+    p_answer_sheet_asset_id: null,
+    p_status: "submitted",
+    p_display_name: user.name,
+    p_score: score,
+    p_submitted_at: submittedAt,
+  });
+  if (error) throw error;
+  if (saved !== true) return json({ error: "আপনি এই মডেল টেস্টে ইতিমধ্যে অংশগ্রহণ করেছেন।" }, 409);
+  return json({ attempt }, 201);
+}
+
 async function submitExamAttempt(request: NextRequest, path: string): Promise<Response> {
   const user = await requireUser(request);
   if (!user) return json({ error: "প্রথমে লগইন করুন।" }, 401);
@@ -1296,7 +1533,7 @@ async function submitExamAttempt(request: NextRequest, path: string): Promise<Re
   const examId = decodeURIComponent(match[1]);
   const exams = await listResources("exams", user.educationType ?? undefined);
   const exam = exams.find((item) => item.id === examId);
-  if (!exam) return json({ error: "পরীক্ষাটি পাওয়া যায়নি।" }, 404);
+  if (!exam || exam.category !== user.educationType) return json({ error: "পরীক্ষাটি পাওয়া যায়নি।" }, 404);
   const now = Date.now();
   for (const [key, message] of [["startAt", "পরীক্ষাটি এখনো শুরু হয়নি।"], ["endAt", "পরীক্ষার সময় শেষ হয়েছে।"]] as const) {
     const scheduled = exam[key];
@@ -1306,6 +1543,12 @@ async function submitExamAttempt(request: NextRequest, path: string): Promise<Re
       if (key === "startAt" && now < timestamp) return json({ error: message }, 403);
       if (key === "endAt" && now > timestamp) return json({ error: message }, 403);
     }
+  }
+  if (await hasModelTestAttempt(user.id, examId)) {
+    return json({ error: "আপনি এই মডেল টেস্টে ইতিমধ্যে অংশগ্রহণ করেছেন।" }, 409);
+  }
+  if (request.headers.get("content-type")?.includes("application/json")) {
+    return submitMcqModelTestAttempt(request, user, exam);
   }
   const contentLength = Number(request.headers.get("content-length") ?? 0);
   if (contentLength <= 0 || contentLength > 21 * 1024 * 1024) {
@@ -1330,11 +1573,10 @@ async function submitExamAttempt(request: NextRequest, path: string): Promise<Re
   const answers = answersValue as Record<string, unknown>;
   if (!text(timeTaken) || timeTaken.length > 10 || (timeTaken && !/^\d{1,3}:\d{2}$/.test(timeTaken))) return json({ error: "পরীক্ষায় ব্যয় করা সময় সঠিক নয়।" }, 400);
   const questionIds = exam.questionIds;
-  if (!Array.isArray(questionIds) || !questionIds.length || questionIds.some((id) => !text(id))) return json({ error: "পরীক্ষার প্রশ্নগুলো আর পাওয়া যাচ্ছে না।" }, 400);
-  const allQuestions = await listResources("questions", String(exam.category ?? user.educationType));
-  const questionMap = new Map(allQuestions.map((question) => [String(question.id), question]));
-  const questions = questionIds.map((id) => questionMap.get(String(id))).filter((question) => question !== undefined);
-  if (questions.length !== questionIds.length) return json({ error: "পরীক্ষার প্রশ্নগুলো আর পাওয়া যাচ্ছে না।" }, 400);
+  if (!Array.isArray(questionIds) || !questionIds.length || questionIds.some((id) => !text(id)) ||
+      new Set(questionIds).size !== questionIds.length) return json({ error: "পরীক্ষার প্রশ্নগুলো আর পাওয়া যাচ্ছে না।" }, 400);
+  const questions = await loadExamQuestions(exam, questionIds);
+  const questionMap = new Map(questions.map((question) => [String(question.id), question]));
   const cqQuestions = questions.filter((question) => question.questionType === "CQ");
   const mcqQuestions = questions.filter((question) => question.questionType !== "CQ");
   if (questions.some((question) => ![undefined, "MCQ", "CQ"].includes(question.questionType as string))) return json({ error: "পরীক্ষায় অজানা প্রশ্নের ধরন রয়েছে।" }, 400);
@@ -1397,13 +1639,26 @@ async function submitExamAttempt(request: NextRequest, path: string): Promise<Re
     cqPdfAssetId: assetId, cqPdfUrl: `/api/media/${assetId}`,
     cqPdfName: asset.original_name, topicBreakdown: {}, weakTopics: [],
   };
-  const { error: attemptError } = await supabase.from("exam_attempts").insert({
-    id: attempt.id, user_id: user.id, exam_id: String(exam.id),
-    category: String(exam.category), answers, result: {},
-    answer_sheet_asset_id: assetId, status: "pending", data: attempt,
-    submitted_at: submittedAt,
+  const { data: saved, error: attemptError } = await supabase.rpc("submit_model_test_attempt", {
+    p_user_id: user.id,
+    p_exam_id: String(exam.id),
+    p_category: String(exam.category),
+    p_attempt: attempt,
+    p_answers: answers,
+    p_answer_sheet_asset_id: assetId,
+    p_status: "pending",
+    p_display_name: user.name,
+    p_score: null,
+    p_submitted_at: submittedAt,
   });
   if (attemptError) throw attemptError;
+  if (saved !== true) {
+    const { error: assetDeleteError } = await supabase.from("assets").delete().eq("id", assetId);
+    if (assetDeleteError) throw assetDeleteError;
+    const { error: fileDeleteError } = await supabase.storage.from(STORAGE_BUCKET).remove([storagePath]);
+    if (fileDeleteError) throw fileDeleteError;
+    return json({ error: "আপনি এই মডেল টেস্টে ইতিমধ্যে অংশগ্রহণ করেছেন।" }, 409);
+  }
   return json({ attempt }, 201);
 }
 
@@ -1431,9 +1686,13 @@ async function gradeExamAttempt(request: NextRequest, path: string, input: JsonO
   attempt.score = Math.round((Number(attempt.mcqScore) + Number(attempt.cqScore)) * 100) / 100;
   attempt.percentage = Math.round(Number(attempt.score) / Number(attempt.totalMarks) * 100);
   attempt.cqStatus = "reviewed";
-  const { error: updateError } = await supabase.from("exam_attempts")
-    .update({ status: "reviewed", data: attempt, result: attempt }).eq("id", attemptId);
+  const { data: updated, error: updateError } = await supabase.rpc("grade_model_test_attempt", {
+    p_attempt_id: attemptId,
+    p_attempt: attempt,
+    p_score: attempt.score,
+  });
   if (updateError) throw updateError;
+  if (updated !== true) return json({ error: "মেধা তালিকার ফলাফল আপডেট করা যায়নি।" }, 409);
   return json({ attempt });
 }
 

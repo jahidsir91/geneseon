@@ -11,6 +11,7 @@ import { Modal } from '../utils/modal.js';
 
 let revealedAnswers = new Set();
 let favoriteQuestionIds = new Set();
+let questionBankReturnState = null;
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, char => ({
@@ -164,7 +165,7 @@ function refreshQuestionCard(questionId) {
   currentCard.remove();
 }
 
-function renderQuestionSubjects(group, prefixes) {
+function renderQuestionSubjects(group, prefixes, openTypesFullScreen = false) {
   return group.subjects.length ? group.subjects.map(subjectGroup => `
     <details class="qb-subject-group">
       <summary>
@@ -182,6 +183,20 @@ function renderQuestionSubjects(group, prefixes) {
               (question.questionType || 'MCQ') === type
             );
             const typeLabel = type === 'WRITTEN' ? 'Written' : type;
+            if (openTypesFullScreen) {
+              return `
+                <button class="qb-type-entry" type="button"
+                  data-category="${escapeHtml(group.category)}"
+                  data-subject="${escapeHtml(subjectGroup.subject)}"
+                  data-chapter="${escapeHtml(chapterGroup.chapter)}"
+                  data-question-type="${type}"
+                  onclick="window.openQBQuestionSetFromButton(this)">
+                  <span>${typeLabel}</span>
+                  <span class="qb-hierarchy-count">${typedQuestions.length}টি প্রশ্ন</span>
+                  <span class="qb-type-entry-arrow" aria-hidden="true">›</span>
+                </button>
+              `;
+            }
             return `
               <details class="qb-type-group">
                 <summary>
@@ -263,7 +278,7 @@ export const QuestionBankView = {
       <div class="container">
         <div class="qb-hierarchy">
           ${questionHierarchy.map(group => user && !Auth.isAdmin()
-            ? renderQuestionSubjects(group, prefixes)
+            ? renderQuestionSubjects(group, prefixes, true)
             : `
               <details class="qb-category-group">
                 <summary>
@@ -277,6 +292,71 @@ export const QuestionBankView = {
         </div>
       </div>
     `;
+  },
+
+  openQuestionSet(category, subject, chapter, type) {
+    const user = Auth.getUser();
+    if (!user || Auth.isAdmin() || user.educationType !== category ||
+        !['MCQ', 'CQ', 'WRITTEN'].includes(type)) {
+      Toast.error('প্রশ্নগুলো খোলা যাচ্ছে না।');
+      return;
+    }
+    const questions = db.getQuestions().filter(question =>
+      question.category === category &&
+      question.subject === subject &&
+      (question.chapter || 'অন্যান্য অধ্যায়') === chapter &&
+      (question.questionType || 'MCQ') === type
+    );
+    const main = document.getElementById('main-content');
+    if (!main) return;
+    const openGroups = [...main.querySelectorAll('.qb-hierarchy details')]
+      .flatMap((element, index) => element.open ? [index] : []);
+    questionBankReturnState = {
+      scrollY: window.scrollY,
+      openGroups,
+    };
+    const typeLabel = type === 'WRITTEN' ? 'Written' : type;
+    const cards = questions.map((question, index) =>
+      type === 'CQ'
+        ? renderCQCard(question, index)
+        : type === 'WRITTEN'
+          ? renderWrittenCard(question, index)
+          : renderQuestionCard(question, index, ['ক', 'খ', 'গ', 'ঘ'])
+    ).join('');
+    main.innerHTML = `
+      <section class="qb-fullscreen-view" aria-label="${escapeHtml(typeLabel)} প্রশ্নসমূহ">
+        <header class="qb-fullscreen-header">
+          <button class="btn btn-secondary qb-fullscreen-back" type="button" onclick="window.closeQBQuestionSet()">
+            <span aria-hidden="true">←</span> প্রশ্নব্যাংকে ফিরুন
+          </button>
+          <div class="qb-fullscreen-heading">
+            <p class="text-muted">${escapeHtml(category)} · ${escapeHtml(subject)} · ${escapeHtml(chapter)}</p>
+            <h1>${typeLabel} প্রশ্ন</h1>
+            <span class="qb-hierarchy-count">${questions.length}টি প্রশ্ন</span>
+          </div>
+        </header>
+        <div class="qb-fullscreen-question-list">
+          ${questions.length
+            ? cards
+            : '<p class="text-muted qb-empty-category">এই অধ্যায়ে এই ধরনের কোনো প্রশ্ন নেই।</p>'}
+        </div>
+      </section>
+    `;
+    window.scrollTo(0, 0);
+  },
+
+  closeQuestionSet() {
+    if (!questionBankReturnState) return;
+    const { scrollY, openGroups } = questionBankReturnState;
+    questionBankReturnState = null;
+    const main = document.getElementById('main-content');
+    if (!main) return;
+    main.innerHTML = this.renderList();
+    const details = main.querySelectorAll('.qb-hierarchy details');
+    openGroups.forEach(index => {
+      if (details[index]) details[index].open = true;
+    });
+    window.scrollTo(0, scrollY);
   },
 
   renderPracticeGenerator() {
@@ -340,6 +420,20 @@ export const QuestionBankView = {
               </select>
             </div>
 
+            <div class="form-group">
+              <label class="form-label" for="gen-negative-marking">ভুল উত্তরের জন্য নেগেটিভ মার্কিং</label>
+              <select id="gen-negative-marking" class="form-select" onchange="window.updatePracticeNegativeMarking()">
+                <option value="0">নেগেটিভ মার্কিং নেই</option>
+                <option value="0.25" selected>প্রতি ভুল উত্তরে -০.২৫</option>
+                <option value="0.5">প্রতি ভুল উত্তরে -০.৫</option>
+                <option value="custom">নিজের মান দিন</option>
+              </select>
+              <div id="gen-negative-custom-group" class="form-group practice-negative-custom" hidden style="margin-top: 0.75rem;">
+                <label class="form-label" for="gen-negative-custom">প্রতি ভুল উত্তরে কত নম্বর কাটবে?</label>
+                <input id="gen-negative-custom" class="form-input" type="number" min="0" max="10" step="0.01" value="0.25">
+              </div>
+            </div>
+
             <button type="submit" class="btn btn-glowing btn-lg btn-block" style="margin-top: 1.5rem;">
               ${icons.sparkles} টেস্ট তৈরি করুন ও শুরু করুন
             </button>
@@ -349,6 +443,16 @@ export const QuestionBankView = {
     `;
   }
 };
+
+window.openQBQuestionSetFromButton = button => {
+  QuestionBankView.openQuestionSet(
+    button.dataset.category,
+    button.dataset.subject,
+    button.dataset.chapter,
+    button.dataset.questionType
+  );
+};
+window.closeQBQuestionSet = () => QuestionBankView.closeQuestionSet();
 
 QuestionBankView.loadFavoriteQuestionIds = async () => {
   const user = Auth.getUser();
@@ -395,6 +499,16 @@ window.updatePracticeFilters = () => {
     `<option value="${escapeHtml(chapter)}">${escapeHtml(chapter)}</option>`
   ).join('')}`;
   if (chapters.includes(previousChapter)) chapterSelect.value = previousChapter;
+};
+
+window.updatePracticeNegativeMarking = () => {
+  const selector = document.getElementById('gen-negative-marking');
+  const customGroup = document.getElementById('gen-negative-custom-group');
+  const customInput = document.getElementById('gen-negative-custom');
+  if (!selector || !customGroup || !customInput) return;
+  const isCustom = selector.value === 'custom';
+  customGroup.hidden = !isCustom;
+  customInput.required = isCustom;
 };
 
 window.testQBAnswer = (qid, optIdx) => {
@@ -518,6 +632,14 @@ window.generateCustomTest = (e) => {
   const subject = document.getElementById('gen-subject').value;
   const chapter = document.getElementById('gen-chapter').value;
   const difficulty = document.getElementById('gen-difficulty').value;
+  const negativeMarkingSelection = document.getElementById('gen-negative-marking').value;
+  const negativeMarking = negativeMarkingSelection === 'custom'
+    ? Number(document.getElementById('gen-negative-custom').value)
+    : Number(negativeMarkingSelection);
+  if (!Number.isFinite(negativeMarking) || negativeMarking < 0 || negativeMarking > 10) {
+    Toast.error('নেগেটিভ মার্কিং ০ থেকে ১০-এর মধ্যে দিন।');
+    return;
+  }
   const favoritesOnly = difficulty === 'FAVORITES';
   const matchingQuestions = db.getQuestions().filter(question =>
     question.category === cat
@@ -546,7 +668,7 @@ window.generateCustomTest = (e) => {
     totalQuestions: selectedQuestions.length,
     durationMinutes: Math.max(5, Math.round(selectedQuestions.length * 1.0)),
     totalMarks: selectedQuestions.length,
-    negativeMarking: 0.25,
+    negativeMarking,
     accessType: 'free',
     isLive: true
   };

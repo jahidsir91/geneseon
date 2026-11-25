@@ -21,6 +21,10 @@ let examCopyHandler = null;
 let examSelectHandler = null;
 let autoSubmitPromise = null;
 
+function getExamScrollPosition() {
+  return document.querySelector('.exam-scroll-area')?.scrollTop ?? window.scrollY;
+}
+
 function getScheduleState(exam, now = Date.now()) {
   const startAt = exam.startAt ? Date.parse(exam.startAt) : null;
   const endAt = exam.endAt ? Date.parse(exam.endAt) : null;
@@ -121,7 +125,7 @@ function guardExamSession(session) {
   visibilityChangeHandler = () => {
     if (document.visibilityState === 'hidden') {
       pendingVisibilityLoss = true;
-      session.scrollY = window.scrollY;
+      session.scrollY = getExamScrollPosition();
       ExamService.saveCurrentSession();
       return;
     }
@@ -135,7 +139,7 @@ function guardExamSession(session) {
     }
   };
   beforeUnloadHandler = event => {
-    session.scrollY = window.scrollY;
+    session.scrollY = getExamScrollPosition();
     ExamService.saveCurrentSession();
   };
   examKeyHandler = event => {
@@ -213,6 +217,7 @@ export const ExamView = {
         <div class="exams-grid">
           ${exams.map(e => {
             const schedule = getScheduleState(e);
+            const participation = !Auth.isAdmin() ? db.getModelTestParticipation(e.id) : null;
             return `
             <div class="exam-card">
               <div class="exam-card-header">
@@ -220,6 +225,7 @@ export const ExamView = {
                 <span class="badge ${schedule.live ? 'badge-live' : schedule.expired ? 'badge-danger' : 'badge-warning'}" data-exam-status="${escapeHtml(e.id)}">${schedule.live ? 'LIVE' : schedule.expired ? 'সময় শেষ' : 'শুরু হতে বাকি'}</span>
               </div>
               <h3 style="font-size: 1.15rem; font-weight: 700; line-height: 1.4;">${e.title}</h3>
+              ${participation ? '<span class="badge badge-success" style="margin-bottom: 0.75rem;">অংশগ্রহণ করেছেন</span>' : ''}
               <div class="exam-meta-grid">
                 <div class="exam-meta-box">
                   <div class="num">${e.totalQuestions} টি</div>
@@ -239,9 +245,11 @@ export const ExamView = {
                   ? `⚠️ ভুল উত্তরের জন্য -${Number(e.negativeMarking ?? 0.25)} নম্বর কাটা যাবে`
                   : 'নেগেটিভ মার্কিং নেই'}
               </div>
-              <a href="#/exam/${escapeHtml(e.id)}" class="btn btn-primary btn-lg btn-block exam-start-button" data-exam-action="${escapeHtml(e.id)}" aria-disabled="${schedule.upcoming || schedule.expired}" onclick="return window.openScheduledExam('${escapeHtml(e.id)}', event)">
-                ${icons.play}<span data-exam-label>${schedule.upcoming ? `শুরু হতে বাকি ${formatCountdown(schedule.countdown)}` : schedule.expired ? 'সময় শেষ' : 'পরীক্ষা শুরু করুন'}</span>
-              </a>
+              ${participation
+                ? `<a href="#/exam/result/${encodeURIComponent(participation.attemptId)}" class="btn btn-primary btn-lg btn-block exam-start-button">${icons.barChart}<span>ফলাফল দেখুন</span></a>`
+                : `<button type="button" class="btn btn-primary btn-lg btn-block exam-start-button" data-exam-action="${escapeHtml(e.id)}" aria-disabled="${schedule.upcoming || schedule.expired}" onclick="window.openScheduledExam('${escapeHtml(e.id)}', event)">
+                  ${icons.play}<span data-exam-label>${schedule.upcoming ? `শুরু হতে বাকি ${formatCountdown(schedule.countdown)}` : schedule.expired ? 'সময় শেষ' : 'পরীক্ষা শুরু করুন'}</span>
+                </button>`}
             </div>
           `;
           }).join('')}
@@ -257,6 +265,26 @@ export const ExamView = {
   async renderRunner(examId) {
     if (scheduleInterval) clearInterval(scheduleInterval);
     const activeSession = ExamService.getCurrentSession();
+    const exam = db.getExamById(examId);
+    if (exam && !Auth.isAdmin() && !examId.startsWith('custom_test_')) {
+      const response = await fetch(`/api/exams/${encodeURIComponent(examId)}/participation`, {
+        credentials: 'same-origin'
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'পরীক্ষায় অংশগ্রহণের তথ্য লোড করা যায়নি।');
+      if (result.participated) {
+        return `
+          <div class="container text-center" style="padding: 4rem 1rem;">
+            <span class="badge badge-success">অংশগ্রহণ করেছেন</span>
+            <h2 style="margin: 1rem 0 0.5rem;">এই মডেল টেস্টে আপনি আগেই অংশগ্রহণ করেছেন</h2>
+            <p class="text-muted">একটি মডেল টেস্টে একবারই অংশ নেওয়া যাবে।</p>
+            ${result.attemptId
+              ? `<a href="#/exam/result/${encodeURIComponent(result.attemptId)}" class="btn btn-primary" style="margin-top: 1rem;">নিজের ফলাফল দেখুন</a>`
+              : '<a href="#/exam" class="btn btn-secondary" style="margin-top: 1rem;">মডেল টেস্টে ফিরে যান</a>'}
+          </div>
+        `;
+      }
+    }
     const session = activeSession?.examId === examId && activeSession.userId === Auth.getUser()?.id
       ? activeSession
       : ExamService.startExam(examId);
@@ -273,7 +301,11 @@ export const ExamView = {
     }
     if (!Auth.isAdmin()) guardExamSession(session);
     if (session.scrollY > 0) {
-      requestAnimationFrame(() => window.scrollTo(0, session.scrollY));
+      requestAnimationFrame(() => {
+        const scrollArea = document.querySelector('.exam-scroll-area');
+        if (scrollArea) scrollArea.scrollTop = session.scrollY;
+        else window.scrollTo(0, session.scrollY);
+      });
     }
 
     // Start timer interval if not active
@@ -329,7 +361,8 @@ export const ExamView = {
           </div>
         </header>
 
-        ${hasCQ ? `
+        <div class="exam-scroll-area">
+          ${hasCQ ? `
           <section class="exam-cq-upload-banner">
             <div>
               <strong>CQ উত্তরপত্র (PDF) *</strong>
@@ -397,15 +430,25 @@ export const ExamView = {
             }).join('')}
           </section>
 
-          <!-- Question Palette -->
-          <div class="palette-card">
-            <h4 style="font-size: 1rem; margin-bottom: 0.75rem;">প্রশ্নে যান</h4>
+        </div>
+        </div>
+        <div class="exam-question-navigation" id="exam-question-navigation">
+          <button class="exam-question-navigation-toggle" type="button" aria-controls="exam-question-palette" aria-expanded="false" onclick="window.toggleExamQuestionNavigation()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            <span>প্রশ্ন নেভিগেশন</span>
+            <span class="exam-question-navigation-count">${session.questions.length}</span>
+          </button>
+          <div class="palette-card" id="exam-question-palette" aria-hidden="true" aria-label="প্রশ্ন নেভিগেশন">
+            <div class="exam-question-navigation-heading">
+              <h4>প্রশ্নে যান</h4>
+              <button class="exam-question-navigation-close" type="button" aria-label="নেভিগেশন বন্ধ করুন" onclick="window.toggleExamQuestionNavigation(false)">×</button>
+            </div>
             <div class="palette-grid">
               ${session.questions.map((ques, idx) => {
                 const ans = session.answers[ques.id] !== undefined;
                 const flg = session.flagged.has(ques.id);
                 return `
-                  <button class="palette-btn ${ans ? 'answered' : ''} ${flg ? 'flagged' : ''}" data-palette-question="${idx}" onclick="window.gotoExamQuestion(${idx})">
+                  <button class="palette-btn ${ans ? 'answered' : ''} ${flg ? 'flagged' : ''} ${idx === session.currentIndex ? 'current' : ''}" data-palette-question="${idx}" onclick="window.gotoExamQuestion(${idx})">
                     ${idx + 1}
                   </button>
                 `;
@@ -461,6 +504,22 @@ export const ExamView = {
       return `<div class="container text-center" style="padding: 4rem;"><h2>ফলাফল পাওয়া যায়নি</h2><a href="#/exam" class="btn btn-primary">সকল পরীক্ষা</a></div>`;
     }
 
+    const isModelTestAttempt = Boolean(attempt.examId) && !String(attempt.examId).startsWith('custom_test_');
+    let leaderboardSummary = null;
+    if (isModelTestAttempt && !Auth.isAdmin()) {
+      try {
+        const response = await fetch(`/api/exams/${encodeURIComponent(attempt.examId)}/leaderboard`, {
+          credentials: 'same-origin'
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'মেধা তালিকা লোড করা যায়নি।');
+        leaderboardSummary = result;
+      } catch (error) {
+        console.error('Model test leaderboard could not be loaded:', error);
+        Toast.error(error.message || 'মেধা তালিকা লোড করা যায়নি।');
+      }
+    }
+
     const prefixes = ['ক', 'খ', 'গ', 'ঘ'];
 
     return `
@@ -476,7 +535,7 @@ export const ExamView = {
           </div>
 
           <p style="font-size: 1.1rem; font-weight: 600; color: var(--primary); margin-bottom: 1rem;">
-            ${attempt.cqStatus === 'pending' ? 'CQ মূল্যায়নের আগে MCQ-এর অস্থায়ী নম্বর' : 'শতকরা নম্বর'}: ${attempt.percentage}% ${attempt.meritRank ? `• মেধা তালিকা: ${attempt.meritRank} (শীর্ষ ${attempt.percentile})` : ''}
+            ${attempt.cqStatus === 'pending' ? 'CQ মূল্যায়নের আগে MCQ-এর অস্থায়ী নম্বর' : 'শতকরা নম্বর'}: ${attempt.percentage}%
           </p>
 
           <div class="result-stats-row">
@@ -506,6 +565,23 @@ export const ExamView = {
             </div>
           </div>
         </div>
+
+        ${isModelTestAttempt && !Auth.isAdmin() ? `
+          <section class="card" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;padding:1.25rem 1.5rem;margin-bottom:2rem;">
+            <div>
+              <h2 style="font-size:1.15rem;margin-bottom:0.35rem;">মডেল টেস্টের মেধা তালিকা</h2>
+              <p class="text-muted">${leaderboardSummary?.rank
+                ? `তোমার অবস্থান: ${leaderboardSummary.rank} / ${leaderboardSummary.participantCount}`
+                : attempt.cqStatus === 'pending'
+                  ? 'CQ মূল্যায়ন সম্পন্ন হলে তোমার অবস্থান দেখা যাবে।'
+                  : 'তোমার অবস্থান লোড করা যায়নি।'}
+              </p>
+            </div>
+            <button type="button" class="btn btn-primary" onclick="window.openModelTestLeaderboard('${escapeHtml(attempt.examId)}')">
+              শীর্ষ ৫০ মেধা তালিকা দেখুন
+            </button>
+          </section>
+        ` : ''}
 
         ${attempt.cqStatus ? `
           <section class="card exam-cq-result-card">
@@ -632,19 +708,19 @@ window.selectCQAnswerSheet = (event) => {
 // Global Exam Handlers
 window.openScheduledExam = (examId, event) => {
   const exam = db.getExamById(examId);
-  if (!exam) return true;
+  if (!exam) return;
   const schedule = getScheduleState(exam);
   if (schedule.upcoming) {
-    event.preventDefault();
     Toast.info(`পরীক্ষা শুরু হতে বাকি ${formatCountdown(schedule.countdown)}`);
-    return false;
+    return;
   }
   if (schedule.expired) {
-    event.preventDefault();
     Toast.warning('এই পরীক্ষার সময় শেষ হয়েছে।');
-    return false;
+    return;
   }
-  return true;
+  event?.preventDefault();
+  window.history.pushState(null, '', `#/exam/${encodeURIComponent(examId)}`);
+  void window.appInstance?.handleRoute();
 };
 
 window.selectExamOption = (qid, idx) => {
@@ -703,11 +779,61 @@ window.gotoExamQuestion = (idx) => {
   if (session && session.questions[idx]) {
     session.currentIndex = idx;
     ExamService.saveCurrentSession();
+    document.querySelectorAll('[data-palette-question]').forEach(button => {
+      button.classList.toggle('current', Number(button.dataset.paletteQuestion) === idx);
+    });
+    window.toggleExamQuestionNavigation(false);
     document.getElementById(`exam-question-${idx}`)?.scrollIntoView({
       behavior: 'smooth',
       block: 'start'
     });
   }
+};
+
+window.openModelTestLeaderboard = async (examId) => {
+  try {
+    const response = await fetch(`/api/exams/${encodeURIComponent(examId)}/leaderboard`, {
+      credentials: 'same-origin'
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'মেধা তালিকা লোড করা যায়নি।');
+    const entries = result.entries || [];
+    Modal.open({
+      title: 'শীর্ষ ৫০ মেধা তালিকা',
+      maxWidth: '680px',
+      content: entries.length ? `
+        <p class="text-muted" style="margin-bottom:1rem;">মোট অংশগ্রহণকারী: ${result.participantCount || 0} জন</p>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead><tr><th>অবস্থান</th><th>শিক্ষার্থীর নাম</th><th>নম্বর</th></tr></thead>
+            <tbody>${entries.map(entry => `
+              <tr>
+                <td><strong>${entry.rank}</strong></td>
+                <td>${escapeHtml(entry.name)}</td>
+                <td>${entry.score}</td>
+              </tr>
+            `).join('')}</tbody>
+          </table>
+        </div>
+      ` : '<div class="empty-state"><p class="empty-state-text">এখনো কোনো ফলাফল প্রকাশিত হয়নি।</p></div>'
+    });
+  } catch (error) {
+    console.error('Model test leaderboard could not be opened:', error);
+    Toast.error(error.message || 'মেধা তালিকা লোড করা যায়নি।');
+  }
+};
+
+window.toggleExamQuestionNavigation = (forceOpen) => {
+  const navigation = document.getElementById('exam-question-navigation');
+  const toggle = navigation?.querySelector('.exam-question-navigation-toggle');
+  const palette = document.getElementById('exam-question-palette');
+  if (!navigation || !toggle || !palette) return;
+  const isOpen = typeof forceOpen === 'boolean'
+    ? forceOpen
+    : !navigation.classList.contains('open');
+  navigation.classList.toggle('open', isOpen);
+  toggle.setAttribute('aria-expanded', String(isOpen));
+  palette.setAttribute('aria-hidden', String(!isOpen));
 };
 
 window.confirmSubmitExam = () => {

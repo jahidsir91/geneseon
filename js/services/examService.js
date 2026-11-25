@@ -111,6 +111,10 @@ export const ExamService = {
   startExam(examId) {
     const exam = db.getExamById(examId);
     if (!exam) return null;
+    if (!Auth.isAdmin() && !examId.startsWith('custom_test_') && db.getModelTestParticipation(examId)) {
+      Toast.error('আপনি এই মডেল টেস্টে ইতিমধ্যে অংশগ্রহণ করেছেন।');
+      return null;
+    }
     if (!Auth.canAccessCategory(exam.category)) {
       Toast.error('এই পরীক্ষাটি আপনার অ্যাকাউন্টের জন্য উপলভ্য নয়।');
       return null;
@@ -365,8 +369,6 @@ export const ExamService = {
       skipped: skippedCount,
       negativePenalty: penalty,
       timeTaken: timeFormatted,
-      meritRank: `${Math.floor(Math.random() * 25) + 3} / 1,450`,
-      percentile: `${Math.min(99.9, (percentage + 5)).toFixed(1)}%`,
       submittedAt: new Date().toLocaleString('bn-BD'),
       answers: { ...session.answers },
       questions: session.questions,
@@ -375,6 +377,7 @@ export const ExamService = {
     };
 
     const hasCQ = questions.some(question => question.questionType === 'CQ');
+    let savedAsModelTest = false;
     if (hasCQ && !Auth.isAdmin()) {
       if (!session.cqAnswerSheet) {
         throw new Error('CQ পরীক্ষার উত্তরপত্র PDF আপলোড করুন।');
@@ -393,6 +396,20 @@ export const ExamService = {
         throw new Error(payload.error || 'পরীক্ষার উত্তরপত্র জমা দেওয়া যায়নি।');
       }
       Object.assign(resultRecord, payload.attempt);
+      savedAsModelTest = !session.examId.startsWith('custom_test_');
+    } else if (!hasCQ && user?.role === 'STUDENT' && !session.examId.startsWith('custom_test_')) {
+      const response = await fetch(`/api/exams/${encodeURIComponent(session.examId)}/attempts`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answers: session.answers, timeTaken: timeFormatted })
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || 'পরীক্ষার ফলাফল জমা দেওয়া যায়নি।');
+      }
+      Object.assign(resultRecord, payload.attempt);
+      savedAsModelTest = true;
     } else if (hasCQ) {
       resultRecord.cqStatus = 'pending';
       resultRecord.cqMaxMarks = Math.max(0, resultRecord.totalMarks - questions.filter(q => q.questionType !== 'CQ').length);
@@ -401,6 +418,13 @@ export const ExamService = {
     }
 
     db.addExamAttempt(resultRecord);
+    if (savedAsModelTest) {
+      db.recordModelTestParticipation({
+        examId: resultRecord.examId,
+        attemptId: resultRecord.id,
+        submittedAt: resultRecord.submittedAt
+      });
+    }
     this.currentSession = null;
     localStorage.removeItem(CURRENT_EXAM_STORAGE_KEY);
     try {

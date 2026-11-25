@@ -121,6 +121,105 @@
   padding: 0 1.25rem 1rem;
 }
 
+.qb-type-entry {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: calc(100% - 1.5rem);
+  margin: 0 0.75rem 0.65rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-align: left;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+.qb-type-entry:hover,
+.qb-type-entry:focus-visible {
+  background: var(--bg-card-subtle);
+  border-color: var(--border-focus);
+}
+.qb-type-entry .qb-hierarchy-count {
+  margin-left: auto;
+}
+.qb-type-entry-arrow {
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.qb-fullscreen-view {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1.5rem clamp(1rem, 4vw, 3rem) 3rem;
+  background: var(--bg-main);
+}
+.qb-fullscreen-header {
+  position: sticky;
+  top: -1.5rem;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 1rem;
+  margin: -1.5rem calc(-1 * clamp(1rem, 4vw, 3rem)) 1.5rem;
+  padding: 1rem clamp(1rem, 4vw, 3rem);
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-sm);
+}
+.qb-fullscreen-back {
+  justify-self: start;
+  white-space: nowrap;
+}
+.qb-fullscreen-heading {
+  text-align: center;
+}
+.qb-fullscreen-heading p,
+.qb-fullscreen-heading h1 {
+  margin: 0 0 0.25rem;
+}
+.qb-fullscreen-heading h1 {
+  font-size: 1.35rem;
+}
+.qb-fullscreen-question-list {
+  display: grid;
+  gap: 1rem;
+  width: min(100%, 1000px);
+  margin: 0 auto;
+}
+.qb-fullscreen-question-list .question-item-card {
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .qb-fullscreen-view {
+    padding-right: 1rem;
+    padding-left: 1rem;
+  }
+  .qb-fullscreen-header {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+    margin-right: -1rem;
+    margin-left: -1rem;
+    padding-right: 1rem;
+    padding-left: 1rem;
+  }
+  .qb-fullscreen-back {
+    justify-self: stretch;
+  }
+  .qb-fullscreen-heading {
+    text-align: left;
+  }
+}
+
 /* Question Bank List */
 .qb-list {
   display: flex;

@@ -59,9 +59,17 @@ export const Auth = {
 
   async loadContent() {
     if (!this.currentUser) return;
+    db.setModelTestParticipations([]);
     try {
       const content = await request('/api/content');
       db.mergeServerContent(content);
+      try {
+        const { participations } = await request('/api/exam-participations');
+        db.setModelTestParticipations(participations || []);
+      } catch (error) {
+        console.error('Model test participation synchronization failed:', error);
+        Toast.warning('মডেল টেস্টে অংশগ্রহণের তথ্য লোড করা যায়নি।');
+      }
       window.dispatchEvent(new CustomEvent('contentChanged'));
     } catch (error) {
       console.error('Server content synchronization failed:', error);
@@ -176,6 +184,7 @@ export const Auth = {
       return false;
     }
     this.currentUser = null;
+    db.setModelTestParticipations([]);
     this.saveSession();
     Toast.info('সফলভাবে লগআউট হয়েছে।');
     window.location.hash = '#/login';

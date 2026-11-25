@@ -684,6 +684,7 @@ const initialDB = {
 class Database {
   constructor() {
     this.data = this.load();
+    this.modelTestParticipations = new Map();
   }
 
   load() {
@@ -767,6 +768,18 @@ class Database {
       this.data.products = resources.products;
     }
     this.save();
+  }
+
+  setModelTestParticipations(participations) {
+    this.modelTestParticipations = new Map(
+      participations.map(participation => [participation.examId, participation])
+    );
+  }
+  getModelTestParticipation(examId) {
+    return this.modelTestParticipations.get(examId) || null;
+  }
+  recordModelTestParticipation(participation) {
+    this.modelTestParticipations.set(participation.examId, participation);
   }
 
   // Courses
